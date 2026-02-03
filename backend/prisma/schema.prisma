@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  password     String
+  name         String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  
+  transactions Transaction[]
+  files        File[]
+  feedbacks    UserFeedback[]
+  
+  @@map("users")
+}
+
+model Category {
+  id           String         @id @default(uuid())
+  name         String
+  parentId     String?
+  parent       Category?      @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Category[]     @relation("CategoryTree")
+  icon         String
+  color        String
+  order        Int
+  isActive     Boolean        @default(true)
+  
+  transactions Transaction[]
+  oldFeedbacks UserFeedback[] @relation("OldCategory")
+  newFeedbacks UserFeedback[] @relation("NewCategory")
+  
+  @@index([parentId])
+  @@index([isActive, order])
+  @@map("categories")
+}
+
+model Transaction {
+  id            String         @id @default(uuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  date          DateTime       @db.Date
+  amount        Int
+  merchantName  String
+  description   String?        @db.Text
+  cardCompany   String
+  needsReview   Boolean        @default(false)
+  confidence    Decimal?       @db.Decimal(3, 2)
+  fileId        String?
+  file          File?          @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  feedbacks     UserFeedback[]
+  
+  @@index([userId, date(sort: Desc)])
+  @@index([categoryId])
+  @@index([userId, categoryId, date])
+  @@index([needsReview])
+  @@map("transactions")
+}
+
+model File {
+  id            String         @id @default(uuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename      String
+  originalName  String
+  fileUrl       String         @db.Text
+  fileSize      Int
+  cardCompany   String
+  uploadedAt    DateTime       @default(now())
+  status        String         @default("completed")
+  
+  transactions  Transaction[]
+  
+  @@index([userId, uploadedAt(sort: Desc)])
+  @@map("files")
+}
+
+model UserFeedback {
+  id              String       @id @default(uuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactionId   String
+  transaction     Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  oldCategoryId   String
+  oldCategory     Category     @relation("OldCategory", fields: [oldCategoryId], references: [id], onDelete: Restrict)
+  newCategoryId   String
+  newCategory     Category     @relation("NewCategory", fields: [newCategoryId], references: [id], onDelete: Restrict)
+  merchantName    String
+  createdAt       DateTime     @default(now())
+  
+  @@index([merchantName])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("user_feedbacks")
+}
