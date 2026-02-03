@@ -1,0 +1,121 @@
+# Backend Development Rules
+
+## Project Context
+- NestJS 백엔드 API 서버
+- PostgreSQL + Prisma ORM
+- JWT 인증
+- 카드 결제 내역 파싱 및 AI 분류
+- Gmail API 연동 (이메일 첨부파일 자동 수집)
+- 암호화된 엑셀 파일 처리 지원
+
+## Code Style
+
+### TypeScript
+- 클래스/인터페이스: PascalCase
+- 함수/변수: camelCase
+- 상수: UPPER_SNAKE_CASE
+- 파일명: kebab-case
+- `any` 사용 금지, 모든 함수에 반환 타입 명시
+
+### NestJS Module Structure
+```
+module/
+├── dto/
+├── entities/
+├── *.controller.ts
+├── *.service.ts
+└── *.module.ts
+```
+
+### Error Handling
+- NestJS 내장 예외 사용 (`BadRequestException`, `NotFoundException`)
+- 커스텀 예외는 `HttpException` 상속
+
+## API Design
+
+### RESTful Endpoints
+```
+GET    /resource           # 목록
+GET    /resource/:id       # 단일
+POST   /resource           # 생성
+PATCH  /resource/:id       # 수정
+DELETE /resource/:id       # 삭제
+```
+
+### Response Format
+```typescript
+// Success
+{ "data": {...}, "message": "Success" }
+
+// Error
+{ "statusCode": 400, "message": "...", "error": "Bad Request" }
+```
+
+## File Processing
+
+### Excel Files
+- 일반 엑셀: `xlsx` 라이브러리
+- 암호화된 엑셀: `msoffcrypto-tool` 또는 `node-office-crypto`
+- 비밀번호는 사용자 입력 또는 생년월일 자동 시도
+
+### Gmail API Integration
+- OAuth 2.0 인증
+- 카드사 발신자 필터링 (예: `@hanacard.co.kr`, `@hyundaicard.com`)
+- 첨부파일 자동 다운로드 및 파싱
+- 이메일 본문 HTML 파싱 (cheerio)
+
+### File Parsers
+- 카드사별 파서 구현 (Factory Pattern)
+- HTML 파서: cheerio
+- Excel 파서: xlsx
+- 암호화 해제 후 파싱
+
+## Database
+
+### Naming
+- 테이블: snake_case, 복수형
+- 컬럼: camelCase (Prisma), snake_case (DB)
+
+### Query Optimization
+- N+1 방지 (Prisma `include`)
+- 필요한 필드만 SELECT
+- 페이지네이션 필수
+
+## Security
+
+### Authentication
+- 모든 API 기본 인증 필요
+- Public API는 `@Public()` 명시
+
+### Password
+- bcrypt 해싱 (salt rounds: 10)
+- 평문 비밀번호 로그 금지
+
+### File Upload
+- 크기 제한: 10MB
+- 허용 확장자: `.xlsx`, `.xls`, `.html`
+- 파일명 UUID 변경
+- 암호화된 파일 비밀번호는 메모리에서만 처리
+
+### Gmail API
+- OAuth 토큰 암호화 저장
+- Refresh token 안전하게 관리
+- 이메일 내용 로그 금지 (개인정보)
+
+## Testing
+- 모든 Service에 단위 테스트
+- 주요 API E2E 테스트
+- 파서별 테스트 케이스 작성
+- 커버리지 80% 목표
+
+## Documentation
+- 복잡한 로직에만 주석
+- Swagger 데코레이터 사용
+- 모든 DTO에 `@ApiProperty()`
+- 카드사별 파서 문서화
+
+## Performance
+- 쿼리 최적화
+- 자주 조회되는 데이터 캐싱
+- 페이지네이션 적용
+- 대용량 파일 스트리밍 처리

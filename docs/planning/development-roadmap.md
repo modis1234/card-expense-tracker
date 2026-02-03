@@ -697,6 +697,12 @@ export default function DashboardPage() {
 
 ### 우선순위 3: 기능 추가
 - [ ] Gmail API 연동
+  - OAuth 2.0 인증
+  - 카드사 이메일 자동 수집
+  - 첨부파일/HTML 파싱
+- [ ] 암호화된 엑셀 파일 지원
+  - 비밀번호 입력 UI
+  - 생년월일 자동 시도
 - [ ] 예산 관리
 - [ ] 알림 기능
 - [ ] 리포트 내보내기 (PDF, Excel)
