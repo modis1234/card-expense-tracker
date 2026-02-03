@@ -31,6 +31,7 @@
 ```
 .
 ├── README.md                      # 프로젝트 개요 및 진행 상황
+├── RULES.md                       # 개발 규칙 및 컨벤션
 ├── docs/                          # 문서 디렉토리
 │   ├── planning/                  # 기획 문서
 │   │   ├── project-specification.md
@@ -45,12 +46,19 @@
 │       ├── system-architecture.md
 │       ├── system-architecture-v2.md
 │       └── architecture-decisions.md
+├── blog/                          # 블로그 포스팅
+│   ├── 01-project-start.md
+│   ├── 02-card-format-analysis.md
+│   ├── 03-backend-setup.md
+│   └── README.md
+├── backend/                       # NestJS 백엔드
 ├── card-formats-analysis.md       # 카드사 포맷 분석
 ├── sample-collection-guide.md     # 샘플 수집 가이드
 └── samples/                       # 카드사별 샘플 파일
+    ├── hana/
+    ├── hyundai/
     ├── shinhan/
     ├── samsung/
-    ├── hyundai/
     ├── kb/
     └── lotte/
 ```
@@ -87,6 +95,7 @@
 ### 설계 문서
 - [데이터베이스 스키마](./docs/design/database-schema.md)
 - [카테고리 시드 데이터](./docs/design/categories-seed-data.md)
+- [Gmail API 연동 계획](./docs/planning/gmail-integration-plan.md)
 
 ### 아키텍처 문서
 - [시스템 아키텍처 v1](./docs/architecture/system-architecture.md)
