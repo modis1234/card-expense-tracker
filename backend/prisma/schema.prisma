@@ -11,16 +11,29 @@ model User {
   email        String         @unique
   password     String?
   name         String?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  googleId     String?        @unique(map: "users_googleid_key")
+  googleId     String?        @unique
   picture      String?
   provider     String?        @default("local")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
   files        File[]
   transactions Transaction[]
   feedbacks    UserFeedback[]
 
   @@map("users")
+}
+
+model CardCompany {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  code         String        @unique
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  files        File[]
+  transactions Transaction[]
+
+  @@map("card_companies")
 }
 
 model Category {
@@ -43,45 +56,49 @@ model Category {
 }
 
 model Transaction {
-  id           String         @id @default(uuid())
-  date         DateTime       @db.Date
-  amount       Int
-  description  String?
-  confidence   Decimal?       @db.Decimal(3, 2)
-  cardCompany  String
-  categoryId   String
-  createdAt    DateTime       @default(now())
-  fileId       String?
-  merchantName String
-  needsReview  Boolean        @default(false)
-  updatedAt    DateTime       @updatedAt
-  userId       String
-  category     Category       @relation(fields: [categoryId], references: [id])
-  file         File?          @relation(fields: [fileId], references: [id])
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  feedbacks    UserFeedback[]
+  id            String       @id @default(uuid())
+  date          DateTime     @db.Date
+  amount        Int
+  description   String?
+  confidence    Decimal?     @db.Decimal(3, 2)
+  cardCompanyId String
+  categoryId    String
+  createdAt     DateTime     @default(now())
+  fileId        String?
+  merchantName  String
+  needsReview   Boolean      @default(false)
+  updatedAt     DateTime     @updatedAt
+  userId        String
+  cardCompany   CardCompany  @relation(fields: [cardCompanyId], references: [id])
+  category      Category     @relation(fields: [categoryId], references: [id])
+  file          File?        @relation(fields: [fileId], references: [id])
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedbacks     UserFeedback[]
 
   @@index([userId, date(sort: Desc)])
   @@index([categoryId])
+  @@index([cardCompanyId])
   @@index([userId, categoryId, date])
   @@index([needsReview])
   @@map("transactions")
 }
 
 model File {
-  id           String        @id @default(uuid())
-  filename     String
-  status       String        @default("completed")
-  cardCompany  String
-  fileSize     Int
-  fileUrl      String
-  originalName String
-  uploadedAt   DateTime      @default(now())
-  userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  id            String        @id @default(uuid())
+  filename      String
+  status        String        @default("completed")
+  cardCompanyId String
+  fileSize      Int
+  fileUrl       String
+  originalName  String
+  uploadedAt    DateTime      @default(now())
+  userId        String
+  cardCompany   CardCompany   @relation(fields: [cardCompanyId], references: [id])
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
 
   @@index([userId, uploadedAt(sort: Desc)])
+  @@index([cardCompanyId])
   @@map("files")
 }
 
