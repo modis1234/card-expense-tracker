@@ -60,6 +60,8 @@ export class UsersModule {}
 - **Authentication**: JWT + Passport
 - **File Processing**: xlsx (엑셀), cheerio (HTML 파싱)
 - **Validation**: class-validator (입력값 검증)
+- **API Documentation**: Swagger/OpenAPI
+- **Password Hashing**: bcrypt
 
 ## 🚀 시작하기
 
@@ -106,7 +108,9 @@ npm run build
 npm run start:prod
 ```
 
-서버가 실행되면: http://localhost:3000
+서버가 실행되면:
+- API 서버: http://localhost:3000
+- Swagger API 문서: http://localhost:3000/api
 
 ## 📁 프로젝트 구조 설명
 
