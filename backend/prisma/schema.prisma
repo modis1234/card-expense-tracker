@@ -9,58 +9,58 @@ datasource db {
 model User {
   id           String         @id @default(uuid())
   email        String         @unique
-  password     String
+  password     String?
   name         String?
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
-  
-  transactions Transaction[]
+  googleId     String?        @unique(map: "users_googleid_key")
+  picture      String?
+  provider     String?        @default("local")
   files        File[]
+  transactions Transaction[]
   feedbacks    UserFeedback[]
-  
+
   @@map("users")
 }
 
 model Category {
   id           String         @id @default(uuid())
   name         String
-  parentId     String?
-  parent       Category?      @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children     Category[]     @relation("CategoryTree")
   icon         String
   color        String
   order        Int
   isActive     Boolean        @default(true)
-  
+  parentId     String?
+  parent       Category?      @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Category[]     @relation("CategoryTree")
   transactions Transaction[]
-  oldFeedbacks UserFeedback[] @relation("OldCategory")
   newFeedbacks UserFeedback[] @relation("NewCategory")
-  
+  oldFeedbacks UserFeedback[] @relation("OldCategory")
+
   @@index([parentId])
   @@index([isActive, order])
   @@map("categories")
 }
 
 model Transaction {
-  id            String         @id @default(uuid())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categoryId    String
-  category      Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  date          DateTime       @db.Date
-  amount        Int
-  merchantName  String
-  description   String?        @db.Text
-  cardCompany   String
-  needsReview   Boolean        @default(false)
-  confidence    Decimal?       @db.Decimal(3, 2)
-  fileId        String?
-  file          File?          @relation(fields: [fileId], references: [id], onDelete: SetNull)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  
-  feedbacks     UserFeedback[]
-  
+  id           String         @id @default(uuid())
+  date         DateTime       @db.Date
+  amount       Int
+  description  String?
+  confidence   Decimal?       @db.Decimal(3, 2)
+  cardCompany  String
+  categoryId   String
+  createdAt    DateTime       @default(now())
+  fileId       String?
+  merchantName String
+  needsReview  Boolean        @default(false)
+  updatedAt    DateTime       @updatedAt
+  userId       String
+  category     Category       @relation(fields: [categoryId], references: [id])
+  file         File?          @relation(fields: [fileId], references: [id])
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedbacks    UserFeedback[]
+
   @@index([userId, date(sort: Desc)])
   @@index([categoryId])
   @@index([userId, categoryId, date])
@@ -69,36 +69,35 @@ model Transaction {
 }
 
 model File {
-  id            String         @id @default(uuid())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  filename      String
-  originalName  String
-  fileUrl       String         @db.Text
-  fileSize      Int
-  cardCompany   String
-  uploadedAt    DateTime       @default(now())
-  status        String         @default("completed")
-  
-  transactions  Transaction[]
-  
+  id           String        @id @default(uuid())
+  filename     String
+  status       String        @default("completed")
+  cardCompany  String
+  fileSize     Int
+  fileUrl      String
+  originalName String
+  uploadedAt   DateTime      @default(now())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
   @@index([userId, uploadedAt(sort: Desc)])
   @@map("files")
 }
 
 model UserFeedback {
-  id              String       @id @default(uuid())
-  userId          String
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactionId   String
-  transaction     Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  oldCategoryId   String
-  oldCategory     Category     @relation("OldCategory", fields: [oldCategoryId], references: [id], onDelete: Restrict)
-  newCategoryId   String
-  newCategory     Category     @relation("NewCategory", fields: [newCategoryId], references: [id], onDelete: Restrict)
-  merchantName    String
-  createdAt       DateTime     @default(now())
-  
+  id            String      @id @default(uuid())
+  createdAt     DateTime    @default(now())
+  merchantName  String
+  newCategoryId String
+  oldCategoryId String
+  transactionId String
+  userId        String
+  newCategory   Category    @relation("NewCategory", fields: [newCategoryId], references: [id])
+  oldCategory   Category    @relation("OldCategory", fields: [oldCategoryId], references: [id])
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([merchantName])
   @@index([userId, createdAt(sort: Desc)])
   @@map("user_feedbacks")
