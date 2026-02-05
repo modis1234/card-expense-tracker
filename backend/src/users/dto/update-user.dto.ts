@@ -1,4 +1,5 @@
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * 사용자 수정 DTO (Data Transfer Object)
@@ -12,6 +13,11 @@ export class UpdateUserDto {
    * - 선택 입력 값
    * - 중복 불가 (서비스 레이어에서 검증)
    */
+  @ApiProperty({
+    description: '사용자 이메일 주소',
+    example: 'newemail@example.com',
+    required: false,
+  })
   @IsEmail()
   @IsOptional()
   email?: string;
@@ -22,6 +28,12 @@ export class UpdateUserDto {
    * - 선택 입력 값
    * - 제공 시 bcrypt로 해싱되어 저장됨
    */
+  @ApiProperty({
+    description: '사용자 비밀번호 (최소 6자)',
+    example: 'newpassword123',
+    minLength: 6,
+    required: false,
+  })
   @IsString()
   @MinLength(6)
   @IsOptional()
@@ -31,6 +43,11 @@ export class UpdateUserDto {
    * 사용자 이름
    * - 선택 입력 값
    */
+  @ApiProperty({
+    description: '사용자 이름',
+    example: 'Jane Doe',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   name?: string;

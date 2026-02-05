@@ -5,6 +5,14 @@
 http://localhost:3000
 ```
 
+## Swagger API 문서
+대화형 API 문서는 다음 주소에서 확인할 수 있습니다:
+```
+http://localhost:3000/api
+```
+
+Swagger UI에서 직접 API를 테스트하고 요청/응답 형식을 확인할 수 있습니다.
+
 ---
 
 ## Users API

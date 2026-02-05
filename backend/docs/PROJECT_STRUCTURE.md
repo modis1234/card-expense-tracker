@@ -50,21 +50,48 @@ card-expense-tracker/
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  await app.listen(3000);
+  
+  // CORS 설정
+  app.enableCors();
+  
+  // 전역 Validation Pipe 설정
+  app.useGlobalPipes(new ValidationPipe({ 
+    whitelist: true,      // DTO에 없는 속성 제거
+    transform: true,      // 자동 타입 변환
+  }));
+  
+  // Swagger 설정
+  const config = new DocumentBuilder()
+    .setTitle('Card Expense Tracker API')
+    .setDescription('카드 지출 관리 시스템 API 문서')
+    .setVersion('1.0')
+    .addTag('users', '사용자 관리')
+    .addBearerAuth() // JWT 인증 추가
+    .build();
+  
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
+  
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  
+  console.log(`🚀 Server running on http://localhost:${port}`);
+  console.log(`📚 Swagger API docs available at http://localhost:${port}/api`);
 }
 bootstrap();
 ```
 
-**주요 설정 가능 항목**:
-- CORS 설정
-- 전역 파이프 (Validation)
-- 전역 필터 (Exception Handling)
-- 전역 인터셉터
-- API 문서 (Swagger)
+**현재 적용된 설정**:
+- ✅ CORS 활성화
+- ✅ 전역 Validation Pipe (자동 타입 변환, DTO 검증)
+- ✅ Swagger API 문서 (/api 경로)
+- ✅ JWT Bearer 인증 지원
 
 ---
 
