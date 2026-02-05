@@ -15,7 +15,7 @@ export class UserEntity {
   email: string;
   
   @Exclude()
-  password: string;
+  password: string | null;
   
   @ApiProperty({
     description: '사용자 이름',
@@ -23,6 +23,27 @@ export class UserEntity {
     nullable: true,
   })
   name: string | null;
+
+  @ApiProperty({
+    description: 'Google 사용자 ID',
+    example: '1234567890',
+    nullable: true,
+  })
+  googleId?: string | null;
+
+  @ApiProperty({
+    description: '프로필 사진 URL',
+    example: 'https://lh3.googleusercontent.com/...',
+    nullable: true,
+  })
+  picture?: string | null;
+
+  @ApiProperty({
+    description: '인증 제공자',
+    example: 'google',
+    default: 'local',
+  })
+  provider?: string | null;
 
   @ApiProperty({
     description: '생성 일시',

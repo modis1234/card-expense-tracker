@@ -200,4 +200,65 @@ export class UsersService {
       },
     });
   }
+
+  /**
+   * Google ID로 사용자 조회
+   */
+  async findByGoogleId(googleId: string) {
+    return this.prisma.user.findFirst({
+      where: { googleId: googleId } as any,
+    });
+  }
+
+  /**
+   * 이메일로 사용자 조회
+   */
+  async findByEmail(email: string) {
+    return this.prisma.user.findFirst({
+      where: { email },
+    });
+  }
+
+  /**
+   * Google ID 업데이트
+   */
+  async updateGoogleId(id: string, googleId: string, picture?: string) {
+    const updateData: any = {
+      googleId,
+      provider: 'google',
+    };
+    if (picture) {
+      updateData.picture = picture;
+    }
+    
+    return this.prisma.user.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Google 사용자 생성
+   */
+  async createGoogleUser(data: {
+    googleId: string;
+    email: string;
+    name: string;
+    picture?: string;
+  }) {
+    const createData: any = {
+      googleId: data.googleId,
+      email: data.email,
+      name: data.name,
+      provider: 'google',
+    };
+    
+    if (data.picture) {
+      createData.picture = data.picture;
+    }
+    
+    return this.prisma.user.create({
+      data: createData,
+    });
+  }
 }
