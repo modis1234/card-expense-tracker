@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
+import { AIService } from './ai.service';
 
 export interface ParsedTransaction {
   date: string;
@@ -12,7 +13,10 @@ export interface ParsedTransaction {
 
 @Injectable()
 export class FilesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private aiService: AIService,
+  ) {}
 
   async parseAndSaveExcel(buffer: Buffer, userId: string | null, fileInfo: { filename: string; originalName: string; fileSize: number }): Promise<void> {
     // 테스트용: userId가 없거나 유효하지 않으면 첫 번째 유저 사용
@@ -57,16 +61,44 @@ export class FilesService {
       return !isNaN(date.getTime()) && row.merchantName;
     });
 
+    // OpenAI 카테고리 분류 (선택적)
+    let categorizedResults: string[] = [];
+    const useAI = process.env.USE_AI_CATEGORIZATION === 'true';
+    
+    if (useAI) {
+      try {
+        const categories = await this.prisma.category.findMany({ where: { isActive: true } });
+        const categoryNames = categories.map(c => c.name);
+        categorizedResults = await this.aiService.categorizeBatch(
+          validRows.map((row: any) => ({ merchantName: row.merchantName })),
+          categoryNames
+        );
+      } catch (error) {
+        console.warn('AI 카테고리 분류 실패, 기본 카테고리 사용:', error.message);
+      }
+    }
+
+    const categories = await this.prisma.category.findMany({ where: { isActive: true } });
+
     await this.prisma.transaction.createMany({
-      data: validRows.map((row: any) => ({
-        date: new Date(row.date),
-        merchantName: row.merchantName || '',
-        amount: this.parseAmount(row.amount),
-        cardCompanyId: cardCompany.id,
-        userId: validUserId,
-        fileId: file.id,
-        categoryId: defaultCategory.id,
-      })),
+      data: validRows.map((row: any, index: number) => {
+        let category = defaultCategory;
+        
+        if (categorizedResults[index]) {
+          const foundCategory = categories.find(c => c.name === categorizedResults[index]);
+          if (foundCategory) category = foundCategory;
+        }
+        
+        return {
+          date: new Date(row.date),
+          merchantName: row.merchantName || '',
+          amount: this.parseAmount(row.amount),
+          cardCompanyId: cardCompany.id,
+          userId: validUserId,
+          fileId: file.id,
+          categoryId: category.id,
+        };
+      }),
     });
   }
 
@@ -97,5 +129,30 @@ export class FilesService {
       return Number(value.replace(/[^0-9.-]/g, '')) || 0;
     }
     return 0;
+  }
+
+  async recategorizeTransaction(transactionId: string): Promise<string> {
+    const transaction = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+    });
+    if (!transaction) throw new Error('거래 내역을 찾을 수 없습니다.');
+
+    const categories = await this.prisma.category.findMany({ where: { isActive: true } });
+    const categoryNames = categories.map(c => c.name);
+
+    const suggestedCategory = await this.aiService.categorizeTransaction(
+      transaction.merchantName,
+      categoryNames
+    );
+
+    const category = categories.find(c => c.name === suggestedCategory);
+    if (category) {
+      await this.prisma.transaction.update({
+        where: { id: transactionId },
+        data: { categoryId: category.id },
+      });
+    }
+
+    return suggestedCategory;
   }
 }
