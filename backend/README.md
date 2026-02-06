@@ -59,6 +59,7 @@ export class UsersModule {}
 - **Database**: PostgreSQL + Prisma ORM
 - **Authentication**: JWT + Passport
 - **File Processing**: xlsx (엑셀), cheerio (HTML 파싱)
+- **AI**: Google Gemini API (카테고리 자동 분류)
 - **Validation**: class-validator (입력값 검증)
 - **API Documentation**: Swagger/OpenAPI
 - **Password Hashing**: bcrypt
@@ -83,7 +84,8 @@ cp .env.example .env
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 JWT_SECRET=your-secret-key
-OPENAI_API_KEY=your-openai-key
+GEMINI_API_KEY=your-gemini-api-key
+USE_AI_CATEGORIZATION=true
 PORT=3000
 ```
 
@@ -141,6 +143,7 @@ src/
 │   ├── files.module.ts
 │   ├── files.controller.ts # 파일 업로드 API
 │   ├── files.service.ts    # 파일 처리 로직
+│   ├── ai.service.ts       # Gemini AI 카테고리 분류
 │   └── parsers/            # 카드사별 파일 파서
 │
 ├── transactions/           # 거래 내역
@@ -282,6 +285,37 @@ npm run lint:fix
 # Prisma Studio (DB GUI)
 npx prisma studio
 ```
+
+## 🤖 AI 카테고리 자동 분류
+
+### Gemini API 설정
+
+1. **API 키 발급**
+   - https://aistudio.google.com/app/apikey 접속
+   - "Create API Key" 클릭
+   - 생성된 키를 `.env`에 입력
+
+2. **환경 변수 설정**
+   ```env
+   GEMINI_API_KEY="your-api-key"
+   USE_AI_CATEGORIZATION=true
+   ```
+
+3. **동작 방식**
+   - 엑셀 파일 업로드 시 자동으로 각 거래의 가맹점명 분석
+   - DB에 저장된 카테고리 목록 중 가장 적절한 카테고리 자동 선택
+   - 예: "스타벅스" → "식비", "GS25" → "편의점"
+
+4. **수동 재분류**
+   ```bash
+   PUT /files/transactions/:id/recategorize
+   ```
+
+5. **AI 비활성화**
+   ```env
+   USE_AI_CATEGORIZATION=false
+   ```
+   - 모든 거래가 기본 카테고리로 저장됨
 
 ## 📖 더 배우기
 
