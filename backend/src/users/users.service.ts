@@ -261,4 +261,14 @@ export class UsersService {
       data: createData,
     });
   }
+
+  async updateGmailTokens(userId: string, accessToken: string, refreshToken?: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        gmailAccessToken: accessToken,
+        gmailRefreshToken: refreshToken,
+      },
+    });
+  }
 }
