@@ -26,8 +26,15 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       // Google에 요청할 사용자 정보 범위
       // 'email': 이메일 주소
       // 'profile': 이름, 프로필 사진 등
-      scope: ['email', 'profile'],
-    });
+      scope: ['email', 'profile', 'https://www.googleapis.com/auth/gmail.readonly'],
+    } as any);
+  }
+
+  authorizationParams(): Record<string, string> {
+    return {
+      access_type: 'offline',
+      prompt: 'consent',
+    };
   }
 
   /**
@@ -62,6 +69,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       name: `${name.givenName} ${name.familyName}`,   // 전체 이름 (성 + 이름)
       picture: photos[0].value,                        // 프로필 사진 URL
       accessToken,                                     // Google API 호출용 토큰
+      refreshToken,                                    // Gmail API용 refresh token
     };
     
     // done(null, user)를 호출하면:

@@ -8,6 +8,6 @@ import { AIService } from './ai.service';
   imports: [DatabaseModule],
   controllers: [FilesController],
   providers: [FilesService, AIService],
-  exports: [FilesService],
+  exports: [FilesService, AIService],
 })
 export class FilesModule {}

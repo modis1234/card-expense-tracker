@@ -14,7 +14,7 @@ export class AuthService {
       return { message: 'No user from google' };
     }
 
-    const { googleId, email, name, picture } = req.user;
+    const { googleId, email, name, picture, accessToken: gmailAccessToken, refreshToken: gmailRefreshToken } = req.user;
 
     // 기존 사용자 확인 또는 새 사용자 생성
     let user = await this.usersService.findByGoogleId(googleId);
@@ -34,6 +34,11 @@ export class AuthService {
           picture,
         });
       }
+    }
+
+    // Gmail 토큰 저장
+    if (gmailAccessToken) {
+      await this.usersService.updateGmailTokens(user.id, gmailAccessToken, gmailRefreshToken);
     }
 
     const payload = { sub: user.id, email: user.email };

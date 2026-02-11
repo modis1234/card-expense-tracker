@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { FilesModule } from './files/files.module';
 import { CardCompaniesModule } from './card-companies/card-companies.module';
+import { GmailModule } from './gmail/gmail.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CardCompaniesModule } from './card-companies/card-companies.module';
     AuthModule,
     FilesModule,
     CardCompaniesModule,
+    GmailModule,
   ],
   controllers: [AppController],
   providers: [AppService],
