@@ -97,6 +97,9 @@ npx prisma migrate dev
 
 # Prisma Client 생성 (TypeScript 타입 생성)
 npx prisma generate
+
+# 카테고리 초기 데이터
+psql "$DATABASE_URL" -f seed_categories.sql
 ```
 
 ### 4. 서버 실행
@@ -129,8 +132,9 @@ src/
 │
 ├── auth/                   # 인증 관련
 │   ├── auth.module.ts
-│   ├── auth.controller.ts  # 로그인, 회원가입 API
+│   ├── auth.controller.ts  # Google OAuth 로그인 API
 │   ├── auth.service.ts     # JWT 토큰 생성/검증
+│   ├── strategies/         # Google, JWT 전략
 │   └── guards/             # 인증 가드 (보호된 라우트)
 │
 ├── users/                  # 사용자 관리
@@ -139,28 +143,22 @@ src/
 │   ├── users.service.ts    # 사용자 비즈니스 로직
 │   └── dto/                # 데이터 전송 객체 (입력값 정의)
 │
+├── card-companies/         # 카드사 CRUD
+│   ├── card-companies.module.ts
+│   ├── card-companies.controller.ts
+│   ├── card-companies.service.ts
+│   └── dto/
+│
 ├── files/                  # 파일 업로드/파싱
 │   ├── files.module.ts
 │   ├── files.controller.ts # 파일 업로드 API
-│   ├── files.service.ts    # 파일 처리 로직
-│   ├── ai.service.ts       # Gemini AI 카테고리 분류
-│   └── parsers/            # 카드사별 파일 파서
+│   ├── files.service.ts    # 엑셀 파싱 + 거래 저장
+│   └── ai.service.ts       # Gemini AI 카테고리 분류
 │
-├── transactions/           # 거래 내역
-│   ├── transactions.module.ts
-│   ├── transactions.controller.ts
-│   ├── transactions.service.ts
-│   └── dto/
-│
-├── categories/             # 카테고리
-│   ├── categories.module.ts
-│   ├── categories.controller.ts
-│   └── categories.service.ts
-│
-└── statistics/             # 통계
-    ├── statistics.module.ts
-    ├── statistics.controller.ts
-    └── statistics.service.ts
+└── gmail/                  # Gmail 카드 메일 동기화
+    ├── gmail.module.ts
+    ├── gmail.controller.ts
+    └── gmail.service.ts
 
 prisma/
 └── schema.prisma           # 데이터베이스 스키마 정의

@@ -55,7 +55,7 @@ export class FilesController {
   }
 
   @Put('transactions/:id/recategorize')
-  @ApiOperation({ summary: '거래 내역 카테고리 재분류 (OpenAI)' })
+  @ApiOperation({ summary: '거래 내역 카테고리 재분류 (Gemini)' })
   async recategorizeTransaction(@Param('id') id: string) {
     const category = await this.filesService.recategorizeTransaction(id);
     return { message: '카테고리 재분류 완료', category };

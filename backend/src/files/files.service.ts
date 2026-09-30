@@ -61,7 +61,7 @@ export class FilesService {
       return !isNaN(date.getTime()) && row.merchantName;
     });
 
-    // OpenAI 카테고리 분류 (선택적)
+    // Gemini 카테고리 분류 (선택적)
     let categorizedResults: string[] = [];
     const useAI = process.env.USE_AI_CATEGORIZATION === 'true';
     
