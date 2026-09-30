@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module';
 import { FilesModule } from './files/files.module';
 import { CardCompaniesModule } from './card-companies/card-companies.module';
 import { GmailModule } from './gmail/gmail.module';
+import { CardsModule } from './cards/cards.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
   imports: [
@@ -18,6 +20,8 @@ import { GmailModule } from './gmail/gmail.module';
     FilesModule,
     CardCompaniesModule,
     GmailModule,
+    CardsModule,
+    TransactionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

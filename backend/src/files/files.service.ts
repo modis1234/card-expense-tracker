@@ -80,6 +80,18 @@ export class FilesService {
 
     const categories = await this.prisma.category.findMany({ where: { isActive: true } });
 
+    // 카드번호 끝 4자리로 카드 연결 (처음 보는 카드는 그룹 미지정으로 자동 등록)
+    const cardIdByLast4 = new Map<string, string>();
+    for (const last4 of new Set(validRows.map((row: any) => this.extractLast4(row.cardNumber)))) {
+      if (!last4) continue;
+      const card = await this.prisma.card.upsert({
+        where: { userId_cardCompanyId_last4: { userId: validUserId, cardCompanyId: cardCompany.id, last4 } },
+        update: {},
+        create: { userId: validUserId, cardCompanyId: cardCompany.id, last4 },
+      });
+      cardIdByLast4.set(last4, card.id);
+    }
+
     await this.prisma.transaction.createMany({
       data: validRows.map((row: any, index: number) => {
         let category = defaultCategory;
@@ -94,6 +106,7 @@ export class FilesService {
           merchantName: row.merchantName || '',
           amount: this.parseAmount(row.amount),
           cardCompanyId: cardCompany.id,
+          cardId: cardIdByLast4.get(this.extractLast4(row.cardNumber) ?? ''),
           userId: validUserId,
           fileId: file.id,
           categoryId: category.id,
@@ -121,6 +134,12 @@ export class FilesService {
       }
     }
     return 'UNKNOWN';
+  }
+
+  // '1234-****-****-5678' → '5678'
+  private extractLast4(cardNumber: unknown): string | null {
+    const digits = String(cardNumber ?? '').replace(/\D/g, '');
+    return digits.length >= 4 ? digits.slice(-4) : null;
   }
 
   private parseAmount(value: unknown): number {

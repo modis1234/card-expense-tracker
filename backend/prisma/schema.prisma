@@ -7,20 +7,22 @@ datasource db {
 }
 
 model User {
-  id                 String         @id @default(uuid())
-  email              String         @unique
-  password           String?
-  name               String?
-  googleId           String?        @unique
-  picture            String?
-  provider           String?        @default("local")
-  gmailAccessToken   String?
-  gmailRefreshToken  String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  files              File[]
-  transactions       Transaction[]
-  feedbacks          UserFeedback[]
+  id                String         @id @default(uuid())
+  email             String         @unique
+  password          String?
+  name              String?
+  googleId          String?        @unique
+  picture           String?
+  provider          String?        @default("local")
+  gmailAccessToken  String?
+  gmailRefreshToken String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  files             File[]
+  transactions      Transaction[]
+  feedbacks         UserFeedback[]
+  cards             Card[]
+  cardGroups        CardGroup[]
 
   @@map("users")
 }
@@ -34,8 +36,42 @@ model CardCompany {
   updatedAt    DateTime      @updatedAt
   files        File[]
   transactions Transaction[]
+  cards        Card[]
 
   @@map("card_companies")
+}
+
+model CardGroup {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  color     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards     Card[]
+
+  @@unique([userId, name])
+  @@map("card_groups")
+}
+
+model Card {
+  id            String        @id @default(uuid())
+  userId        String
+  cardCompanyId String
+  last4         String
+  alias         String?
+  groupId       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardCompany   CardCompany   @relation(fields: [cardCompanyId], references: [id])
+  group         CardGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  transactions  Transaction[]
+
+  @@unique([userId, cardCompanyId, last4])
+  @@index([groupId])
+  @@map("cards")
 }
 
 model Category {
@@ -58,28 +94,31 @@ model Category {
 }
 
 model Transaction {
-  id            String       @id @default(uuid())
-  date          DateTime     @db.Date
+  id            String         @id @default(uuid())
+  date          DateTime       @db.Date
   amount        Int
   description   String?
-  confidence    Decimal?     @db.Decimal(3, 2)
+  confidence    Decimal?       @db.Decimal(3, 2)
   cardCompanyId String
+  cardId        String?
   categoryId    String
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime       @default(now())
   fileId        String?
   merchantName  String
-  needsReview   Boolean      @default(false)
-  updatedAt     DateTime     @updatedAt
+  needsReview   Boolean        @default(false)
+  updatedAt     DateTime       @updatedAt
   userId        String
-  cardCompany   CardCompany  @relation(fields: [cardCompanyId], references: [id])
-  category      Category     @relation(fields: [categoryId], references: [id])
-  file          File?        @relation(fields: [fileId], references: [id])
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardCompany   CardCompany    @relation(fields: [cardCompanyId], references: [id])
+  card          Card?          @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  category      Category       @relation(fields: [categoryId], references: [id])
+  file          File?          @relation(fields: [fileId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   feedbacks     UserFeedback[]
 
   @@index([userId, date(sort: Desc)])
   @@index([categoryId])
   @@index([cardCompanyId])
+  @@index([cardId])
   @@index([userId, categoryId, date])
   @@index([needsReview])
   @@map("transactions")
