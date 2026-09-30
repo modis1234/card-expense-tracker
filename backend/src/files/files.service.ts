@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
 import { AIService } from './ai.service';
@@ -18,17 +18,7 @@ export class FilesService {
     private aiService: AIService,
   ) {}
 
-  async parseAndSaveExcel(buffer: Buffer, userId: string | null, fileInfo: { filename: string; originalName: string; fileSize: number }): Promise<void> {
-    // 테스트용: userId가 없거나 유효하지 않으면 첫 번째 유저 사용
-    let validUserId: string;
-    if (!userId || !(await this.prisma.user.findUnique({ where: { id: userId } }))) {
-      const firstUser = await this.prisma.user.findFirst();
-      if (!firstUser) throw new Error('등록된 사용자가 없습니다. 먼저 회원가입하세요.');
-      validUserId = firstUser.id;
-    } else {
-      validUserId = userId;
-    }
-    
+  async parseAndSaveExcel(buffer: Buffer, userId: string, fileInfo: { filename: string; originalName: string; fileSize: number }): Promise<void> {
     const cardCompanyCode = this.extractCardCompanyCode(fileInfo.originalName);
     const cardCompany = await this.prisma.cardCompany.findUnique({ where: { code: cardCompanyCode } });
     if (!cardCompany) throw new Error(`카드사를 찾을 수 없습니다: ${cardCompanyCode}`);
@@ -49,7 +39,7 @@ export class FilesService {
         fileSize: fileInfo.fileSize,
         cardCompanyId: cardCompany.id,
         fileUrl: fileInfo.filename,
-        userId: validUserId,
+        userId: userId,
       },
     });
 
@@ -85,9 +75,9 @@ export class FilesService {
     for (const last4 of new Set(validRows.map((row: any) => this.extractLast4(row.cardNumber)))) {
       if (!last4) continue;
       const card = await this.prisma.card.upsert({
-        where: { userId_cardCompanyId_last4: { userId: validUserId, cardCompanyId: cardCompany.id, last4 } },
+        where: { userId_cardCompanyId_last4: { userId: userId, cardCompanyId: cardCompany.id, last4 } },
         update: {},
-        create: { userId: validUserId, cardCompanyId: cardCompany.id, last4 },
+        create: { userId: userId, cardCompanyId: cardCompany.id, last4 },
       });
       cardIdByLast4.set(last4, card.id);
     }
@@ -107,7 +97,7 @@ export class FilesService {
           amount: this.parseAmount(row.amount),
           cardCompanyId: cardCompany.id,
           cardId: cardIdByLast4.get(this.extractLast4(row.cardNumber) ?? ''),
-          userId: validUserId,
+          userId: userId,
           fileId: file.id,
           categoryId: category.id,
         };
@@ -150,11 +140,11 @@ export class FilesService {
     return 0;
   }
 
-  async recategorizeTransaction(transactionId: string): Promise<string> {
-    const transaction = await this.prisma.transaction.findUnique({
-      where: { id: transactionId },
+  async recategorizeTransaction(userId: string, transactionId: string): Promise<string> {
+    const transaction = await this.prisma.transaction.findFirst({
+      where: { id: transactionId, userId },
     });
-    if (!transaction) throw new Error('거래 내역을 찾을 수 없습니다.');
+    if (!transaction) throw new NotFoundException('거래 내역을 찾을 수 없습니다.');
 
     const categories = await this.prisma.category.findMany({ where: { isActive: true } });
     const categoryNames = categories.map(c => c.name);
