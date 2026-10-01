@@ -24,7 +24,10 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post('upload')
-  @ApiOperation({ summary: '카드 거래내역 엑셀 파일 업로드' })
+  @ApiOperation({
+    summary: '카드 거래내역 엑셀 파일 업로드',
+    description: '파일명에 카드사명(현대/hyundai 등)이 포함되어야 합니다. 현재는 현대카드 엑셀 형식만 지원합니다. 카드번호 끝 4자리로 카드를 자동 등록·연결합니다.',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -58,7 +61,7 @@ export class FilesController {
   }
 
   @Put('transactions/:id/recategorize')
-  @ApiOperation({ summary: '거래 내역 카테고리 재분류 (Gemini)' })
+  @ApiOperation({ summary: '거래 내역 카테고리 재분류 (Gemini)', description: '가맹점명으로 Gemini에 카테고리를 다시 물어 갱신합니다. 본인 거래만 가능합니다.' })
   async recategorizeTransaction(@Req() req: any, @Param('id') id: string) {
     const category = await this.filesService.recategorizeTransaction(req.user.userId, id);
     return { message: '카테고리 재분류 완료', category };
