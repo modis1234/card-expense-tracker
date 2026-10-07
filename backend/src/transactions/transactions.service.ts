@@ -22,4 +22,12 @@ export class TransactionsService {
       orderBy: { date: 'desc' },
     });
   }
+
+  // userId 조건으로 남의 거래는 ID를 알아도 삭제되지 않음
+  async remove(userId: string, ids: string[]) {
+    const { count } = await this.prisma.transaction.deleteMany({
+      where: { id: { in: ids }, userId },
+    });
+    return count;
+  }
 }

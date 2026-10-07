@@ -1,7 +1,8 @@
-import { Controller, Get, Query, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TransactionsService } from './transactions.service';
 import { FindTransactionsDto } from './dto/find-transactions.dto';
+import { DeleteTransactionsDto } from './dto/delete-transactions.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('transactions')
@@ -18,5 +19,16 @@ export class TransactionsController {
   })
   findAll(@Req() req: any, @Query() query: FindTransactionsDto) {
     return this.transactionsService.findAll(req.user.userId, query);
+  }
+
+  @Post('delete')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '거래 내역 삭제 (단건·일괄)',
+    description: 'ids에 담긴 거래 중 본인 거래만 삭제하고 삭제된 건수를 반환합니다. 연결된 피드백도 함께 삭제됩니다.',
+  })
+  async remove(@Req() req: any, @Body() dto: DeleteTransactionsDto) {
+    const count = await this.transactionsService.remove(req.user.userId, dto.ids);
+    return { message: `${count}건 삭제 완료`, count };
   }
 }
