@@ -9,7 +9,7 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    if (token !== undefined) router.replace(token ? '/transactions' : '/login');
+    if (token !== undefined) router.replace(token ? '/dashboard' : '/login');
   }, [token, router]);
 
   return null;

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { clearToken } from '@/lib/api';
 
 const NAV = [
+  { href: '/dashboard', label: '대시보드' },
   { href: '/transactions', label: '거래내역' },
   { href: '/upload', label: '업로드' },
 ];

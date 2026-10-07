@@ -69,10 +69,12 @@ export interface ITransaction {
   installmentRound: number | null;
   /** amount와 다를 때만: 할부 전체 금액, 할인·부분취소 전 이용금액 */
   originalAmount: number | null;
+  /** 청구월 'YYYY-MM' (하나카드 명세서). null이면 이용일 기준 */
+  billingMonth: string | null;
   merchantName: string;
   confidence: string | null;
   needsReview: boolean;
-  category: { id: string; name: string };
+  category: { id: string; name: string; icon: string; color: string };
   cardCompany: { id: string; name: string };
   card: { id: string; last4: string; alias: string | null; group: { id: string; name: string } | null } | null;
 }

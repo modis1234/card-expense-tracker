@@ -9,6 +9,18 @@ const won = (n: number) => `₩${n.toLocaleString('ko-KR')}`;
 /** 서버 응답 결과를 조회 조건(query)과 함께 저장 → query가 바뀌면 자동으로 로딩 상태 */
 type Result = { query: string; data?: ITransaction[]; error?: string };
 
+type SortKey = 'date' | 'amount' | 'payment' | 'category';
+type Sort = { key: SortKey; dir: 'asc' | 'desc' };
+
+// 결제: 일시불(0) < 할부 개월 수 순, 같은 개월이면 회차 순
+const compare: Record<SortKey, (a: ITransaction, b: ITransaction) => number> = {
+  date: (a, b) => a.date.localeCompare(b.date),
+  amount: (a, b) => a.amount - b.amount,
+  payment: (a, b) =>
+    (a.installmentMonths ?? 0) - (b.installmentMonths ?? 0) || (a.installmentRound ?? 0) - (b.installmentRound ?? 0),
+  category: (a, b) => a.category.name.localeCompare(b.category.name, 'ko'),
+};
+
 export default function TransactionsPage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -17,6 +29,12 @@ export default function TransactionsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  // 체크 해제한 카테고리 id (새로 생긴 카테고리는 기본으로 보이게)
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+  // 기본은 서버 정렬과 같은 날짜 내림차순
+  const [sort, setSort] = useState<Sort>({ key: 'date', dir: 'desc' });
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -62,8 +80,9 @@ export default function TransactionsPage() {
   const handleDelete = useCallback(
     async (ids: string[]) => {
       if (!window.confirm(`${ids.length}건을 삭제할까요? 삭제하면 되돌릴 수 없습니다.`)) return;
-      setBusyId(ids.length === 1 ? ids[0] : 'bulk');
+      setBusyId(ids.length === 1 ? ids[0] : 'bulk-delete');
       setRowError(null);
+      setNotice(null);
       try {
         await apiFetch('/transactions/delete', {
           method: 'POST',
@@ -81,15 +100,84 @@ export default function TransactionsPage() {
     [load],
   );
 
-  const loading = result?.query !== query;
-  const rows = useMemo(
-    () => (result?.data ?? []).filter((t) => !reviewOnly || t.needsReview),
-    [result, reviewOnly],
+  const handleBulkRecategorize = useCallback(
+    async (ids: string[]) => {
+      setBusyId('bulk-recat');
+      setRowError(null);
+      setNotice(null);
+      try {
+        const res = await apiFetch<{ message: string }>('/files/transactions/recategorize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        setNotice(res.message);
+        setSelected(new Set());
+        setResult(await load());
+      } catch (e) {
+        setRowError(`일괄 재분류 실패: ${(e as Error).message}`);
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [load],
   );
+
+  const loading = result?.query !== query;
+  // 조회된 거래에 있는 카테고리 목록 (건수 포함, 이름순)
+  const categories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; count: number }>();
+    for (const t of result?.data ?? []) {
+      const c = map.get(t.category.id) ?? { ...t.category, count: 0 };
+      c.count++;
+      map.set(c.id, c);
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  }, [result]);
+
+  const rows = useMemo(() => {
+    const sign = sort.dir === 'asc' ? 1 : -1;
+    const keyword = search.trim().toLowerCase();
+    return (result?.data ?? [])
+      .filter((t) => !reviewOnly || t.needsReview)
+      .filter((t) => !hiddenCategories.has(t.category.id))
+      .filter((t) => !keyword || t.merchantName.toLowerCase().includes(keyword))
+      .sort((a, b) => sign * compare[sort.key](a, b));
+  }, [result, reviewOnly, hiddenCategories, search, sort]);
+
+  const toggleCategory = (id: string) =>
+    setHiddenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const total = useMemo(() => rows.reduce((sum, t) => sum + t.amount, 0), [rows]);
   // 필터로 가려진 행은 선택돼 있어도 삭제 대상에서 제외
   const selectedIds = useMemo(() => rows.filter((t) => selected.has(t.id)).map((t) => t.id), [rows, selected]);
   const allChecked = rows.length > 0 && selectedIds.length === rows.length;
+
+  // 같은 열을 다시 누르면 방향 전환, 다른 열은 금액·날짜는 큰/최신 순부터
+  const sortBy = (key: SortKey) =>
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: key === 'date' || key === 'amount' ? 'desc' : 'asc' },
+    );
+
+  const sortHeader = (key: SortKey, label: string, className = '') => (
+    <th
+      className={`px-3 py-2 ${className}`}
+      aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button onClick={() => sortBy(key)} className="inline-flex items-center gap-1 font-medium hover:text-gray-900">
+        {label}
+        <span className={sort.key === key ? 'text-indigo-600' : 'text-gray-300'}>
+          {sort.key === key && sort.dir === 'asc' ? '▲' : '▼'}
+        </span>
+      </button>
+    </th>
+  );
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -112,28 +200,71 @@ export default function TransactionsPage() {
           종료일
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border border-gray-300 px-2 py-1" />
         </label>
+        <label className="flex flex-col gap-1">
+          가맹점 검색
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="예: 쿠팡"
+            className="rounded border border-gray-300 px-2 py-1"
+          />
+        </label>
         <label className="flex items-center gap-2 pb-1">
           <input type="checkbox" checked={reviewOnly} onChange={(e) => setReviewOnly(e.target.checked)} />
           확인 필요만
         </label>
         <button
+          onClick={() => handleBulkRecategorize(selectedIds)}
+          disabled={selectedIds.length === 0 || busyId !== null}
+          className="rounded border border-indigo-300 px-3 py-1 text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
+        >
+          {busyId === 'bulk-recat' ? '재분류 중...' : `선택 재분류 (${selectedIds.length})`}
+        </button>
+        <button
           onClick={() => handleDelete(selectedIds)}
           disabled={selectedIds.length === 0 || busyId !== null}
           className="rounded border border-red-300 px-3 py-1 text-red-700 hover:bg-red-50 disabled:opacity-40"
         >
-          {busyId === 'bulk' ? '삭제 중...' : `선택 삭제 (${selectedIds.length})`}
+          {busyId === 'bulk-delete' ? '삭제 중...' : `선택 삭제 (${selectedIds.length})`}
         </button>
         <div className="ml-auto pb-1 text-gray-700">
           총 <strong>{rows.length.toLocaleString('ko-KR')}</strong>건 · 합계 <strong>{won(total)}</strong>
         </div>
       </div>
 
+      {categories.length > 0 && (
+        <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
+          <legend className="sr-only">카테고리 필터</legend>
+          <span className="font-medium text-gray-700">카테고리</span>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={hiddenCategories.size === 0}
+              onChange={() =>
+                setHiddenCategories(hiddenCategories.size === 0 ? new Set(categories.map((c) => c.id)) : new Set())
+              }
+            />
+            전체
+          </label>
+          {categories.map((c) => (
+            <label key={c.id} className="flex items-center gap-1.5">
+              <input type="checkbox" checked={!hiddenCategories.has(c.id)} onChange={() => toggleCategory(c.id)} />
+              {c.name} <span className="text-gray-400">({c.count})</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+
       {rowError && <p className="text-sm text-red-600">{rowError}</p>}
+      {notice && <p className="text-sm text-green-700">{notice}</p>}
 
       {loading ? (
         <p className="py-12 text-center text-gray-500">불러오는 중...</p>
       ) : result?.error ? (
         <p className="py-12 text-center text-red-600">거래내역을 불러오지 못했습니다: {result.error}</p>
+      ) : rows.length === 0 && (result?.data?.length ?? 0) > 0 ? (
+        <p className="py-12 text-center text-gray-500">검색·필터 조건에 맞는 거래가 없습니다.</p>
       ) : rows.length === 0 ? (
         <p className="py-12 text-center text-gray-500">
           거래내역이 없습니다.{' '}
@@ -154,11 +285,11 @@ export default function TransactionsPage() {
                     onChange={() => setSelected(allChecked ? new Set() : new Set(rows.map((t) => t.id)))}
                   />
                 </th>
-                <th className="px-3 py-2">날짜</th>
+                {sortHeader('date', '날짜')}
                 <th className="px-3 py-2">가맹점</th>
-                <th className="px-3 py-2 text-right">금액</th>
-                <th className="px-3 py-2">결제</th>
-                <th className="px-3 py-2">카테고리</th>
+                {sortHeader('amount', '금액', 'text-right')}
+                {sortHeader('payment', '결제')}
+                {sortHeader('category', '카테고리')}
                 <th className="px-3 py-2">카드</th>
                 <th className="px-3 py-2">상태</th>
                 <th className="px-3 py-2" />

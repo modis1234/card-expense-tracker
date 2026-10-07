@@ -9,6 +9,8 @@ export interface StatementRow {
   installmentRound?: number;
   /** amount와 다를 때만: 할부 전체 금액, 할인·부분취소 전 이용금액 */
   originalAmount?: number;
+  /** 청구월 'YYYY-MM' (명세서 이용기간 종료월). 할부 회차는 이용일이 아니라 이 달 지출로 집계 */
+  billingMonth?: string;
 }
 
 // 하나카드 이용대금명세서 메일(HTML) 파서
@@ -30,6 +32,7 @@ export function parseHanaHtml(html: string): StatementRow[] {
   if (!period) throw new Error('명세서에서 이용기간을 찾을 수 없습니다.');
   const endYear = Number(period[1]);
   const endMonth = Number(period[2]);
+  const billingMonth = `${period[1]}-${period[2]}`;
 
   const rows: StatementRow[] = [];
   let last4: string | null = null;
@@ -60,6 +63,7 @@ export function parseHanaHtml(html: string): StatementRow[] {
       installmentMonths: months ? Number(months) : undefined,
       installmentRound: months ? Number(round) : undefined,
       originalAmount: originalAmount !== amount ? originalAmount : undefined,
+      billingMonth,
     });
   });
   return rows;

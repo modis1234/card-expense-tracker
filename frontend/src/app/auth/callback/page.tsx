@@ -19,7 +19,7 @@ export default function AuthCallbackPage() {
     setToken(token);
     // 토큰이 주소창/히스토리에 남지 않게 제거
     window.history.replaceState(null, '', window.location.pathname);
-    router.replace('/transactions');
+    router.replace('/dashboard');
   }, [token, router]);
 
   return (

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
 import { AIService, CategorizeResult, REVIEW_THRESHOLD } from './ai.service';
@@ -107,6 +107,7 @@ export class FilesService {
           installmentMonths: row.installmentMonths,
           installmentRound: row.installmentRound,
           originalAmount: row.originalAmount,
+          billingMonth: row.billingMonth,
           cardCompanyId: cardCompany.id,
           cardId: cardIdByLast4.get(row.last4 ?? ''),
           userId: userId,
@@ -200,5 +201,44 @@ export class FilesService {
     }
 
     return result.category;
+  }
+
+  // 여러 거래를 Gemini 일괄 분류로 재분류. AI가 답하지 않았거나 목록에 없는 카테고리를 준 거래는 그대로 둠
+  async recategorizeTransactions(userId: string, ids: string[]): Promise<{ total: number; updated: number }> {
+    const transactions = await this.prisma.transaction.findMany({
+      where: { id: { in: ids }, userId },
+      select: { id: true, merchantName: true },
+    });
+    if (transactions.length === 0) throw new NotFoundException('거래 내역을 찾을 수 없습니다.');
+
+    const categories = await this.prisma.category.findMany({ where: { isActive: true } });
+    const categoryNames = categories.map((c) => c.name);
+
+    // ponytail: 50건씩 순차 호출, 수백 건 이상을 자주 돌리면 병렬화나 백그라운드 작업으로
+    const updates: { id: string; categoryId: string; confidence: number }[] = [];
+    for (let i = 0; i < transactions.length; i += 50) {
+      const chunk = transactions.slice(i, i + 50);
+      let results: (CategorizeResult | undefined)[];
+      try {
+        results = await this.aiService.categorizeBatch(chunk, categoryNames);
+      } catch (error) {
+        throw new BadGatewayException(`AI 분류 요청 실패: ${error.message}`);
+      }
+      chunk.forEach((t, j) => {
+        const result = results[j];
+        const category = result && categories.find((c) => c.name === result.category);
+        if (result && category) updates.push({ id: t.id, categoryId: category.id, confidence: result.confidence });
+      });
+    }
+
+    await this.prisma.$transaction(
+      updates.map((u) =>
+        this.prisma.transaction.update({
+          where: { id: u.id },
+          data: { categoryId: u.categoryId, confidence: u.confidence, needsReview: u.confidence < REVIEW_THRESHOLD },
+        }),
+      ),
+    );
+    return { total: transactions.length, updated: updates.length };
   }
 }
