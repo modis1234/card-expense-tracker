@@ -7,8 +7,9 @@ import { apiFetch, type ITransaction } from '@/lib/api';
 const won = (n: number) => `₩${n.toLocaleString('ko-KR')}`;
 const sumOf = (list: ITransaction[]) => list.reduce((s, t) => s + t.amount, 0);
 
-/** date는 @db.Date → 'YYYY-MM-DDT00:00:00.000Z', 앞 7자리가 'YYYY-MM' */
-const monthOf = (t: ITransaction) => t.date.slice(0, 7);
+/** 청구월 기준 (할부 회차는 청구된 달 지출). 청구월이 없으면 이용일의 'YYYY-MM' */
+const monthOf = (t: ITransaction) => t.billingMonth ?? t.date.slice(0, 7);
+const isInstallment = (t: ITransaction) => t.installmentMonths !== null;
 const shiftMonth = (m: string, delta: number) => {
   const [y, mo] = m.split('-').map(Number);
   const d = new Date(Date.UTC(y, mo - 1 + delta, 1));
@@ -53,11 +54,14 @@ export default function DashboardPage() {
     }
     const categories = [...byCategory.values()].sort((a, b) => b.amount - a.amount);
 
-    // 선택 월 포함 최근 6개월
+    // 선택 월 포함 최근 6개월 (일시불/할부 누적 막대)
     const trend = Array.from({ length: 6 }, (_, i) => {
       const m = shiftMonth(month, i - 5);
-      return { month: m, total: sumOf(data.filter((t) => monthOf(t) === m)) };
+      const list = data.filter((t) => monthOf(t) === m);
+      const installment = sumOf(list.filter(isInstallment));
+      return { month: m, total: sumOf(list), installment };
     });
+    const installments = current.filter(isInstallment).sort((a, b) => b.amount - a.amount);
 
     return {
       total,
@@ -66,7 +70,8 @@ export default function DashboardPage() {
       change: prevTotal ? ((total - prevTotal) / prevTotal) * 100 : null,
       categories,
       trend,
-      installmentTotal: sumOf(current.filter((t) => t.installmentMonths)),
+      installmentTotal: sumOf(installments),
+      installments,
       review: current.filter((t) => t.needsReview).sort((a, b) => b.date.localeCompare(a.date)),
     };
   }, [data, month]);
@@ -115,7 +120,11 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <SummaryCard label="총 지출" value={won(stats.total)} />
+        <SummaryCard
+          label="총 지출"
+          value={won(stats.total)}
+          sub={`일시불 ${won(stats.total - stats.installmentTotal)} · 할부 ${won(stats.installmentTotal)}`}
+        />
         <SummaryCard label="거래 건수" value={`${stats.count.toLocaleString('ko-KR')}건`} />
         <SummaryCard label="평균 지출" value={won(stats.average)} />
         <SummaryCard
@@ -177,20 +186,70 @@ export default function DashboardPage() {
               >
                 <span className="text-[10px] text-gray-500">{t.total ? `${Math.round(t.total / 10000)}만` : ''}</span>
                 <div
-                  className={`w-full rounded-t ${t.month === month ? 'bg-indigo-500' : 'bg-indigo-200'}`}
+                  className={`flex w-full flex-col justify-end overflow-hidden rounded-t ${t.month === month ? '' : 'opacity-50'}`}
                   style={{ height: `${(Math.max(t.total, 0) / trendMax) * 100}%` }}
-                />
+                >
+                  <div className="w-full flex-1 bg-indigo-500" />
+                  <div
+                    className="w-full bg-amber-400"
+                    style={{ height: `${t.total > 0 ? (t.installment / t.total) * 100 : 0}%` }}
+                  />
+                </div>
                 <span className="text-xs text-gray-600">{Number(t.month.slice(5))}월</span>
               </button>
             ))}
           </div>
-          {stats.installmentTotal > 0 && (
-            <p className="mt-4 text-xs text-gray-500">
-              이번 달 지출 중 할부 결제분 {won(stats.installmentTotal)} 포함
-            </p>
-          )}
+          <p className="mt-4 flex gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <span className="size-2.5 rounded-sm bg-indigo-500" /> 일시불
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="size-2.5 rounded-sm bg-amber-400" /> 할부 납입금
+            </span>
+          </p>
         </section>
       </div>
+
+      {stats.installments.length > 0 && (
+        <section className="rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="mb-3 font-semibold">
+            할부 납입 내역 ({stats.installments.length}건 · {won(stats.installmentTotal)})
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-gray-500">
+                <tr>
+                  <th className="py-1.5 pr-3 font-medium">이용일</th>
+                  <th className="py-1.5 pr-3 font-medium">가맹점</th>
+                  <th className="py-1.5 pr-3 font-medium">회차</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">이번 달 납입금</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">총 이용금액</th>
+                  <th className="py-1.5 text-right font-medium">남은 회차</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {stats.installments.map((t) => {
+                  const left = (t.installmentMonths ?? 0) - (t.installmentRound ?? 0);
+                  return (
+                    <tr key={t.id}>
+                      <td className="whitespace-nowrap py-2 pr-3 text-gray-500">{t.date.slice(0, 10)}</td>
+                      <td className="py-2 pr-3">{t.merchantName}</td>
+                      <td className="whitespace-nowrap py-2 pr-3">
+                        {t.installmentRound}/{t.installmentMonths}회
+                      </td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-right">{won(t.amount)}</td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-right text-gray-500">
+                        {t.originalAmount !== null ? won(t.originalAmount) : '-'}
+                      </td>
+                      <td className="whitespace-nowrap py-2 text-right">{left > 0 ? `${left}회` : '완납'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -218,13 +277,14 @@ export default function DashboardPage() {
   );
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
+function SummaryCard({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'up' | 'down' }) {
   // 지출이 늘면(up) 빨강, 줄면(down) 초록
   const color = tone === 'up' ? 'text-red-600' : tone === 'down' ? 'text-green-600' : 'text-gray-900';
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <p className="text-xs text-gray-500">{label}</p>
       <p className={`mt-1 text-lg font-bold ${color}`}>{value}</p>
+      {sub && <p className="mt-1 text-xs text-gray-500">{sub}</p>}
     </div>
   );
 }
