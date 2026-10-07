@@ -107,6 +107,7 @@ export class FilesService {
           installmentMonths: row.installmentMonths,
           installmentRound: row.installmentRound,
           originalAmount: row.originalAmount,
+          billingMonth: row.billingMonth,
           cardCompanyId: cardCompany.id,
           cardId: cardIdByLast4.get(row.last4 ?? ''),
           userId: userId,
