@@ -1,5 +1,8 @@
 # 시스템 아키텍처 및 플로우 (NestJS Backend 포함)
 
+> ⚠️ **설계안 문서입니다.** 실제 구현과 다릅니다 (AI는 Gemini, 인증은 Google OAuth, Parser/Statistics/Feedback 서비스 및 프론트엔드 미구현 등).
+> 현재 구현은 [현재 구현 아키텍처](./current-architecture.md)를 참고하세요.
+
 ## 전체 시스템 아키텍처
 
 ```mermaid
