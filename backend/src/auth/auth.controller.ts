@@ -1,12 +1,17 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { AuthService } from './auth.service';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private configService: ConfigService,
+  ) {}
 
   @Get('google')
   @UseGuards(AuthGuard('google'))
@@ -26,8 +31,9 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ 
     summary: 'Google OAuth 콜백',
-    description: 'Google 인증 후 자동으로 호출되는 엔드포인트'
+    description: 'Google 인증 후 자동으로 호출되는 엔드포인트. FRONTEND_URL이 설정되어 있으면 {FRONTEND_URL}/auth/callback#token=... 으로 리디렉션하고, 없으면 JSON을 반환합니다.'
   })
+  @ApiResponse({ status: 302, description: 'FRONTEND_URL 설정 시 프론트엔드로 리디렉션' })
   @ApiResponse({ 
     status: 200, 
     description: 'JWT 토큰과 사용자 정보 반환',
@@ -43,7 +49,12 @@ export class AuthController {
       }
     }
   })
-  async googleAuthRedirect(@Req() req: any) {
-    return this.authService.googleLogin(req);
+  async googleAuthRedirect(@Req() req: any, @Res() res: Response) {
+    const result = await this.authService.googleLogin(req);
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const token = 'accessToken' in result ? result.accessToken : undefined;
+    if (!frontendUrl || !token) return res.json(result);
+    // fragment로 전달해 서버 로그·Referer에 토큰이 남지 않게 함
+    return res.redirect(`${frontendUrl}/auth/callback#token=${encodeURIComponent(token)}`);
   }
 }
