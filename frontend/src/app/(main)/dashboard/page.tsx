@@ -18,11 +18,13 @@ const shiftMonth = (m: string, delta: number) => {
 const monthLabel = (m: string) => `${m.slice(0, 4)}년 ${Number(m.slice(5))}월`;
 
 type Result = { data?: ITransaction[]; error?: string };
+type Tip = { x: number; y: number; title: string; lines: string[] };
 
 // ponytail: 통계는 GET /transactions 전체를 받아 화면에서 집계. 거래가 수만 건이 되면 서버 집계 API로
 export default function DashboardPage() {
   const [result, setResult] = useState<Result>();
   const [pickedMonth, setPickedMonth] = useState<string>();
+  const [tip, setTip] = useState<Tip | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,14 +93,32 @@ export default function DashboardPage() {
   // 도넛 차트: 양수 금액만 비율 계산 (환불 위주 카테고리는 차트에서 제외)
   const positive = stats.categories.filter((c) => c.amount > 0);
   const positiveTotal = positive.reduce((s, c) => s + c.amount, 0);
-  let acc = 0;
-  const gradient = positive
-    .map((c) => {
-      const start = (acc / positiveTotal) * 100;
-      acc += c.amount;
-      return `${c.color} ${start}% ${(acc / positiveTotal) * 100}%`;
-    })
-    .join(', ');
+  // 누적 비율로 각 조각의 시작·끝(%) 계산
+  const segments = positive.reduce<((typeof positive)[number] & { start: number; end: number })[]>((list, c) => {
+    const start = list.at(-1)?.end ?? 0;
+    return [...list, { ...c, start, end: start + (c.amount / positiveTotal) * 100 }];
+  }, []);
+  const gradient = segments.map((c) => `${c.color} ${c.start}% ${c.end}%`).join(', ');
+
+  // 도넛은 conic-gradient 한 장이라 마우스 위치의 각도(12시 기준 시계방향)로 조각을 찾음
+  const handleDonutMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dx = e.clientX - (rect.left + rect.width / 2);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+    const radius = Math.hypot(dx, dy);
+    const outer = rect.width / 2;
+    const inner = outer - 24; // 가운데 구멍: inset-6 = 24px
+    if (radius < inner || radius > outer) return setTip(null);
+    const pct = (((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360) / 3.6;
+    const seg = segments.find((c) => pct >= c.start && pct < c.end);
+    if (!seg) return setTip(null);
+    setTip({
+      x: e.clientX,
+      y: e.clientY,
+      title: `${seg.icon} ${seg.name}`,
+      lines: [won(seg.amount), `${(seg.end - seg.start).toFixed(1)}% · ${seg.count}건`],
+    });
+  };
   const trendMax = Math.max(...stats.trend.map((t) => t.total), 1);
 
   return (
@@ -143,6 +163,8 @@ export default function DashboardPage() {
               style={{ background: positiveTotal ? `conic-gradient(${gradient})` : '#e5e7eb' }}
               role="img"
               aria-label="카테고리별 지출 비율 차트"
+              onMouseMove={handleDonutMove}
+              onMouseLeave={() => setTip(null)}
             >
               <div className="absolute inset-6 flex flex-col items-center justify-center rounded-full bg-white text-center">
                 <span className="text-xs text-gray-500">총 지출</span>
@@ -182,7 +204,20 @@ export default function DashboardPage() {
                 key={t.month}
                 onClick={() => months.includes(t.month) && setPickedMonth(t.month)}
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-                title={`${monthLabel(t.month)} ${won(t.total)}`}
+                aria-label={`${monthLabel(t.month)} ${won(t.total)}`}
+                onMouseMove={(e) =>
+                  setTip({
+                    x: e.clientX,
+                    y: e.clientY,
+                    title: monthLabel(t.month),
+                    lines: [
+                      `합계 ${won(t.total)}`,
+                      `일시불 ${won(t.total - t.installment)}`,
+                      `할부 납입금 ${won(t.installment)}`,
+                    ],
+                  })
+                }
+                onMouseLeave={() => setTip(null)}
               >
                 <span className="text-[10px] text-gray-500">{t.total ? `${Math.round(t.total / 10000)}만` : ''}</span>
                 <div
@@ -273,6 +308,25 @@ export default function DashboardPage() {
           </ul>
         )}
       </section>
+
+      {tip && <Tooltip tip={tip} />}
+    </div>
+  );
+}
+
+function Tooltip({ tip }: { tip: Tip }) {
+  // 화면 오른쪽 끝에서는 커서 왼쪽에 표시
+  const flip = tip.x > window.innerWidth - 220;
+  return (
+    <div
+      className="pointer-events-none fixed z-50 rounded-md bg-gray-900/90 px-3 py-2 text-xs text-white shadow-lg"
+      style={{ left: tip.x + (flip ? -12 : 12), top: tip.y + 12, transform: flip ? 'translateX(-100%)' : undefined }}
+      role="tooltip"
+    >
+      <p className="font-semibold">{tip.title}</p>
+      {tip.lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
     </div>
   );
 }
