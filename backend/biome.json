@@ -57,7 +57,8 @@
       "style": {
         "noArguments": "error",
         "noVar": "error",
-        "useConst": "error"
+        "useConst": "error",
+        "useImportType": "off"
       },
       "suspicious": {
         "noAsyncPromiseExecutor": "error",
@@ -88,6 +89,10 @@
     }
   },
   "javascript": {
+    "parser": {
+      "unsafeParameterDecoratorsEnabled": true
+    },
+    "globals": ["describe", "it", "expect", "beforeEach", "afterEach", "beforeAll", "afterAll", "jest"],
     "formatter": {
       "quoteStyle": "single",
       "trailingCommas": "all",

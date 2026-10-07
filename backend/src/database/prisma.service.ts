@@ -9,9 +9,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   constructor(configService: ConfigService) {
     const pool = new Pool({
       connectionString: configService.get<string>('DATABASE_URL'),
-      ssl: {
-        rejectUnauthorized: false, // Supabase SSL 연결 허용
-      },
+      // Supabase는 SSL 필요, 로컬 PostgreSQL은 DB_SSL=false
+      ssl: configService.get<string>('DB_SSL') === 'false' ? false : { rejectUnauthorized: false },
     });
     const adapter = new PrismaPg(pool);
     
