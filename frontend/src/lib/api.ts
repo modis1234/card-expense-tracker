@@ -72,7 +72,7 @@ export interface ITransaction {
   merchantName: string;
   confidence: string | null;
   needsReview: boolean;
-  category: { id: string; name: string };
+  category: { id: string; name: string; icon: string; color: string };
   cardCompany: { id: string; name: string };
   card: { id: string; last4: string; alias: string | null; group: { id: string; name: string } | null } | null;
 }
