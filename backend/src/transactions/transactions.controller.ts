@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TransactionsService } from './transactions.service';
 import { FindTransactionsDto } from './dto/find-transactions.dto';
 import { DeleteTransactionsDto } from './dto/delete-transactions.dto';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('transactions')
@@ -19,6 +20,15 @@ export class TransactionsController {
   })
   findAll(@Req() req: any, @Query() query: FindTransactionsDto) {
     return this.transactionsService.findAll(req.user.userId, query);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: '거래 카테고리·메모 수정',
+    description: 'categoryId를 지정하면 수동 확정으로 보고 AI 신뢰도를 지우고 확인 필요를 해제합니다. description은 빈 문자열이면 메모를 삭제합니다.',
+  })
+  update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateTransactionDto) {
+    return this.transactionsService.update(req.user.userId, id, dto);
   }
 
   @Post('delete')

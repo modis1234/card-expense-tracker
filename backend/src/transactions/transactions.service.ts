@@ -1,6 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FindTransactionsDto } from './dto/find-transactions.dto';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
+
+const INCLUDE = { card: { include: { group: true } }, category: true, cardCompany: true } as const;
 
 @Injectable()
 export class TransactionsService {
@@ -18,8 +21,28 @@ export class TransactionsService {
           lte: query.to ? new Date(query.to) : undefined,
         },
       },
-      include: { card: { include: { group: true } }, category: true, cardCompany: true },
+      include: INCLUDE,
       orderBy: { date: 'desc' },
+    });
+  }
+
+  // 카테고리를 바꾸면 사람이 확정한 것으로 보고 AI 신뢰도를 지우고 확인 필요 해제
+  async update(userId: string, id: string, dto: UpdateTransactionDto) {
+    const transaction = await this.prisma.transaction.findFirst({ where: { id, userId } });
+    if (!transaction) throw new NotFoundException('거래 내역을 찾을 수 없습니다.');
+    if (dto.categoryId) {
+      const category = await this.prisma.category.findFirst({
+        where: { id: dto.categoryId, isActive: true },
+      });
+      if (!category) throw new BadRequestException('존재하지 않는 카테고리입니다.');
+    }
+    return this.prisma.transaction.update({
+      where: { id },
+      data: {
+        ...(dto.categoryId && { categoryId: dto.categoryId, confidence: null, needsReview: false }),
+        ...(dto.description !== undefined && { description: dto.description.trim() || null }),
+      },
+      include: INCLUDE,
     });
   }
 
