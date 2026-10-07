@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
 import { AIService, CategorizeResult, REVIEW_THRESHOLD } from './ai.service';
+import { StatementRow, parseHanaHtml } from './parsers/hana-html.parser';
 
 export interface ParsedTransaction {
   date: string;
@@ -18,19 +19,24 @@ export class FilesService {
     private aiService: AIService,
   ) {}
 
-  async parseAndSaveExcel(buffer: Buffer, userId: string, fileInfo: { filename: string; originalName: string; fileSize: number }): Promise<void> {
-    const cardCompanyCode = this.extractCardCompanyCode(fileInfo.originalName);
+  // 엑셀(현대카드) 또는 HTML 명세서(하나카드)를 파싱해 저장하고 저장 건수를 반환
+  async parseAndSaveFile(buffer: Buffer, userId: string, fileInfo: { filename: string; originalName: string; fileSize: number }): Promise<number> {
+    const isHtml = /\.html?$/i.test(fileInfo.originalName);
+    const html = isHtml ? buffer.toString('utf8') : '';
+    // HTML은 파일명 대신 본문으로 카드사 판별 (메일에서 저장한 파일명이 제각각이라)
+    const cardCompanyCode = isHtml && html.includes('하나카드') ? 'HANA' : this.extractCardCompanyCode(fileInfo.originalName);
+    if (isHtml && cardCompanyCode !== 'HANA') throw new BadRequestException('HTML 명세서는 현재 하나카드만 지원합니다.');
+
     const cardCompany = await this.prisma.cardCompany.findUnique({ where: { code: cardCompanyCode } });
-    if (!cardCompany) throw new Error(`카드사를 찾을 수 없습니다: ${cardCompanyCode}`);
-    
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    
-    const rows = XLSX.utils.sheet_to_json(sheet, { 
-      range: 8,
-      header: ['date', 'cardNumber', 'merchantName', 'approvalAmount', 'amount', 'vat', 'relation', 'installment', 'status', 'merchantNumber', 'businessNumber']
-    });
+    if (!cardCompany) throw new BadRequestException(`카드사를 찾을 수 없습니다: ${cardCompanyCode} (파일명에 카드사명을 포함하세요)`);
+
+    let validRows: StatementRow[];
+    try {
+      validRows = isHtml ? parseHanaHtml(html) : this.parseHyundaiExcel(buffer);
+    } catch (error) {
+      throw new BadRequestException(`명세서 파싱 실패: ${error.message}`);
+    }
+    if (validRows.length === 0) throw new BadRequestException('파일에서 거래 내역을 찾지 못했습니다.');
 
     const file = await this.prisma.file.create({
       data: {
@@ -44,12 +50,7 @@ export class FilesService {
     });
 
     const defaultCategory = await this.prisma.category.findFirst({ where: { isActive: true } });
-    if (!defaultCategory) throw new Error('활성화된 카테고리가 없습니다. 먼저 카테고리를 생성하세요.');
-
-    const validRows = rows.filter((row: any) => {
-      const date = new Date(row.date);
-      return !isNaN(date.getTime()) && row.merchantName;
-    });
+    if (!defaultCategory) throw new BadRequestException('활성화된 카테고리가 없습니다. 먼저 카테고리를 생성하세요.');
 
     // Gemini 카테고리 분류 (선택적)
     let categorizedResults: (CategorizeResult | undefined)[] = [];
@@ -60,7 +61,7 @@ export class FilesService {
         const categories = await this.prisma.category.findMany({ where: { isActive: true } });
         const categoryNames = categories.map(c => c.name);
         categorizedResults = await this.aiService.categorizeBatch(
-          validRows.map((row: any) => ({ merchantName: row.merchantName })),
+          validRows.map((row) => ({ merchantName: row.merchantName })),
           categoryNames
         );
       } catch (error) {
@@ -72,7 +73,7 @@ export class FilesService {
 
     // 카드번호 끝 4자리로 카드 연결 (처음 보는 카드는 그룹 미지정으로 자동 등록)
     const cardIdByLast4 = new Map<string, string>();
-    for (const last4 of new Set(validRows.map((row: any) => this.extractLast4(row.cardNumber)))) {
+    for (const last4 of new Set(validRows.map((row) => row.last4))) {
       if (!last4) continue;
       const card = await this.prisma.card.upsert({
         where: { userId_cardCompanyId_last4: { userId: userId, cardCompanyId: cardCompany.id, last4 } },
@@ -83,7 +84,7 @@ export class FilesService {
     }
 
     await this.prisma.transaction.createMany({
-      data: validRows.map((row: any, index: number) => {
+      data: validRows.map((row, index) => {
         let category = defaultCategory;
         let confidence: number | null = null;
         let needsReview = false;
@@ -100,11 +101,14 @@ export class FilesService {
         }
         
         return {
-          date: new Date(row.date),
-          merchantName: row.merchantName || '',
-          amount: this.parseAmount(row.amount),
+          date: row.date,
+          merchantName: row.merchantName,
+          amount: row.amount,
+          installmentMonths: row.installmentMonths,
+          installmentRound: row.installmentRound,
+          originalAmount: row.originalAmount,
           cardCompanyId: cardCompany.id,
-          cardId: cardIdByLast4.get(this.extractLast4(row.cardNumber) ?? ''),
+          cardId: cardIdByLast4.get(row.last4 ?? ''),
           userId: userId,
           fileId: file.id,
           categoryId: category.id,
@@ -113,6 +117,25 @@ export class FilesService {
         };
       }),
     });
+    return validRows.length;
+  }
+
+  // 현대카드 엑셀: 9행부터 거래, 컬럼 순서 고정
+  private parseHyundaiExcel(buffer: Buffer): StatementRow[] {
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<any>(sheet, {
+      range: 8,
+      header: ['date', 'cardNumber', 'merchantName', 'approvalAmount', 'amount', 'vat', 'relation', 'installment', 'status', 'merchantNumber', 'businessNumber']
+    });
+    return rows
+      .filter((row) => !isNaN(new Date(row.date).getTime()) && row.merchantName)
+      .map((row) => ({
+        date: new Date(row.date),
+        merchantName: String(row.merchantName),
+        amount: this.parseAmount(row.amount),
+        last4: this.extractLast4(row.cardNumber),
+      }));
   }
 
   private extractCardCompanyCode(filename: string): string {

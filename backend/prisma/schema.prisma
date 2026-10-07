@@ -94,26 +94,32 @@ model Category {
 }
 
 model Transaction {
-  id            String         @id @default(uuid())
-  date          DateTime       @db.Date
-  amount        Int
-  description   String?
-  confidence    Decimal?       @db.Decimal(3, 2)
-  cardCompanyId String
-  cardId        String?
-  categoryId    String
-  createdAt     DateTime       @default(now())
-  fileId        String?
-  merchantName  String
-  needsReview   Boolean        @default(false)
-  updatedAt     DateTime       @updatedAt
-  userId        String
-  cardCompany   CardCompany    @relation(fields: [cardCompanyId], references: [id])
-  card          Card?          @relation(fields: [cardId], references: [id], onDelete: SetNull)
-  category      Category       @relation(fields: [categoryId], references: [id])
-  file          File?          @relation(fields: [fileId], references: [id])
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  feedbacks     UserFeedback[]
+  id                String         @id @default(uuid())
+  date              DateTime       @db.Date
+  amount            Int
+  /// 할부 개월 수 (일시불이면 null)
+  installmentMonths Int?
+  /// 이번 명세서의 할부 회차
+  installmentRound  Int?
+  /// 명세서 원래 이용금액 (amount와 다를 때만: 할부 전체 금액, 할인·부분취소 전 금액)
+  originalAmount    Int?
+  description       String?
+  confidence        Decimal?       @db.Decimal(3, 2)
+  cardCompanyId     String
+  cardId            String?
+  categoryId        String
+  createdAt         DateTime       @default(now())
+  fileId            String?
+  merchantName      String
+  needsReview       Boolean        @default(false)
+  updatedAt         DateTime       @updatedAt
+  userId            String
+  cardCompany       CardCompany    @relation(fields: [cardCompanyId], references: [id])
+  card              Card?          @relation(fields: [cardId], references: [id], onDelete: SetNull)
+  category          Category       @relation(fields: [categoryId], references: [id])
+  file              File?          @relation(fields: [fileId], references: [id])
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedbacks         UserFeedback[]
 
   @@index([userId, date(sort: Desc)])
   @@index([categoryId])

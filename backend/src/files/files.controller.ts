@@ -25,8 +25,8 @@ export class FilesController {
 
   @Post('upload')
   @ApiOperation({
-    summary: '카드 거래내역 엑셀 파일 업로드',
-    description: '파일명에 카드사명(현대/hyundai 등)이 포함되어야 합니다. 현재는 현대카드 엑셀 형식만 지원합니다. 카드번호 끝 4자리로 카드를 자동 등록·연결합니다.',
+    summary: '카드 거래내역 파일 업로드 (엑셀 / HTML 명세서)',
+    description: '엑셀(.xlsx/.xls)은 파일명에 카드사명(현대/hyundai 등)이 포함되어야 하며 현재 현대카드 형식만 지원합니다. HTML(.html)은 하나카드 이용대금명세서 메일을 저장한 파일을 지원하며 카드사는 본문으로 판별합니다. 카드번호 끝 4자리로 카드를 자동 등록·연결합니다.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -45,19 +45,21 @@ export class FilesController {
         validators: [
           new FileTypeValidator({
             fileType:
-              /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel/,
+              /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/html/,
+            // HTML은 매직 넘버가 없어 브라우저가 보낸 mimetype으로 판별
+            fallbackToMimetype: true,
           }),
         ],
       }),
     )
     file: Express.Multer.File,
   ) {
-    await this.filesService.parseAndSaveExcel(file.buffer, req.user.userId, {
+    const count = await this.filesService.parseAndSaveFile(file.buffer, req.user.userId, {
       filename: `${randomUUID()}-${file.originalname}`,
       originalName: file.originalname,
       fileSize: file.size,
     });
-    return { message: '파일 업로드 및 저장 완료' };
+    return { message: `파일 업로드 및 저장 완료 (${count}건)`, count };
   }
 
   @Put('transactions/:id/recategorize')
