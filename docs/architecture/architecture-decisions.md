@@ -122,6 +122,8 @@ Next.js를 Frontend 프레임워크로 선택 (Backend 있어도)
 
 ## ADR-004: AI 서비스 선택 (OpenAI → Bedrock)
 
+> **상태: 대체됨** — [ADR-007](#adr-007-ai-서비스-변경-gemini)로 대체 (현재 구현은 Gemini)
+
 ### 결정 사항
 초기에는 OpenAI API, 성장 후 AWS Bedrock 전환
 
@@ -222,6 +224,22 @@ Prisma를 ORM으로 선택
 
 ---
 
+## ADR-007: AI 서비스 변경 (Gemini)
+
+### 결정 사항
+카테고리 자동 분류에 OpenAI 대신 Google Gemini(`@google/genai`, `gemini-3-flash-preview`) 사용. ADR-004를 대체합니다.
+
+### 경위
+- 2026-02-06 커밋 `62f9ba4` (feat: Gemini AI 카테고리 자동 분류 기능 추가)에서 도입
+- 선택 이유는 커밋·문서에 기록되어 있지 않음 → **확인 후 보완 필요**
+
+### 현재 동작
+- `backend/src/files/ai.service.ts`의 `AIService`가 엑셀 업로드(배치), 단건 재분류, Gmail 동기화에서 공통 사용
+- `USE_AI_CATEGORIZATION=true`일 때만 업로드 시 분류 (재분류·Gmail 동기화는 항상 호출)
+- 응답은 JSON `{category, confidence}`로 받고, confidence 0.80 미만이면 `needsReview = true`
+
+---
+
 ## 기술 스택 변경 타임라인
 
 ### 2026-01-29: 초기 계획
@@ -246,6 +264,11 @@ Frontend: Next.js + Vercel
 Backend: NestJS + Railway
 Database: Supabase PostgreSQL + Prisma
 AI: OpenAI → Bedrock (나중에)
+```
+
+### 2026-02-06: AI 변경
+```
+AI: Google Gemini (ADR-007)
 ```
 
 ### 최종 결정 이유

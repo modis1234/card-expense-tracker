@@ -1,5 +1,8 @@
 # 시스템 아키텍처 및 플로우
 
+> ⚠️ **폐기된 초기 설계안 (Supabase BaaS 구조)** — NestJS 백엔드 도입으로 [v2](./system-architecture-v2.md)로 대체되었고, v2 역시 설계안입니다.
+> 현재 구현은 [현재 구현 아키텍처](./current-architecture.md)를 참고하세요.
+
 ## 전체 시스템 아키텍처
 
 ```mermaid

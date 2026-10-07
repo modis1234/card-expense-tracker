@@ -63,7 +63,7 @@ npm run start:dev
 ├── card-formats-analysis.md       # 카드사 엑셀 포맷 분석
 ├── sample-collection-guide.md     # 샘플 수집 가이드
 ├── backend/                       # NestJS 백엔드 (자세한 내용은 backend/README.md)
-│   ├── src/                       # auth, users, card-companies, files, gmail, database
+│   ├── src/                       # auth, users, card-companies, cards, files, gmail, transactions, database
 │   ├── prisma/                    # schema.prisma, migrations
 │   └── seed_categories.sql        # 카테고리 초기 데이터
 ├── docs/
@@ -91,9 +91,10 @@ npm run start:dev
 - [와이어프레임](./docs/design/wireframes.md)
 
 ### 아키텍처 문서
-- [시스템 아키텍처 v1](./docs/architecture/system-architecture.md)
-- [시스템 아키텍처 v2](./docs/architecture/system-architecture-v2.md)
-- [아키텍처 의사결정](./docs/architecture/architecture-decisions.md)
+- **[현재 구현 아키텍처](./docs/architecture/current-architecture.md)** ← 실제 코드 기준, 먼저 읽기
+- [아키텍처 의사결정 (ADR)](./docs/architecture/architecture-decisions.md)
+- [시스템 아키텍처 v1](./docs/architecture/system-architecture.md) (폐기된 초기 설계안)
+- [시스템 아키텍처 v2](./docs/architecture/system-architecture-v2.md) (설계안)
 
 ### 기타
 - [카드사 포맷 분석](./card-formats-analysis.md)
