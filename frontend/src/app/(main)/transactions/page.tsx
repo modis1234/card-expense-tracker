@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch, type ITransaction } from '@/lib/api';
+import { apiFetch, type ICategory, type ITransaction } from '@/lib/api';
 
 const won = (n: number) => `₩${n.toLocaleString('ko-KR')}`;
 
@@ -29,6 +29,7 @@ export default function TransactionsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [categoryOptions, setCategoryOptions] = useState<ICategory[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   // 체크 해제한 카테고리 id (새로 생긴 카테고리는 기본으로 보이게)
@@ -60,6 +61,41 @@ export default function TransactionsPage() {
       cancelled = true;
     };
   }, [load]);
+
+  useEffect(() => {
+    // 하위 카테고리를 상위 바로 아래에 배치 (예: 식비 → └ 카페/디저트)
+    apiFetch<ICategory[]>('/categories').then(
+      (list) =>
+        setCategoryOptions(
+          list.filter((c) => !c.parentId).flatMap((p) => [p, ...list.filter((c) => c.parentId === p.id)]),
+        ),
+      () => setCategoryOptions([]),
+    );
+  }, []);
+
+  // 카테고리·메모 수정: 응답으로 받은 거래로 해당 행만 교체 (목록 전체를 다시 불러오지 않음)
+  const handleUpdate = useCallback(async (id: string, patch: { categoryId?: string; description?: string }) => {
+    setBusyId(id);
+    setRowError(null);
+    try {
+      const updated = await apiFetch<ITransaction>(`/transactions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      setResult((prev) => prev && { ...prev, data: prev.data?.map((t) => (t.id === id ? updated : t)) });
+    } catch (e) {
+      setRowError(`수정 실패: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, []);
+
+  const handleMemo = (t: ITransaction) => {
+    // ponytail: 브라우저 기본 입력창 사용, 메모 편집이 잦아지면 인라인 입력으로
+    const memo = window.prompt(`${t.merchantName} 메모 (비우면 삭제)`, t.description ?? '');
+    if (memo !== null && memo !== (t.description ?? '')) handleUpdate(t.id, { description: memo });
+  };
 
   const handleRecategorize = useCallback(
     async (id: string) => {
@@ -310,7 +346,19 @@ export default function TransactionsPage() {
                     </td>
                     {/* date는 @db.Date → 'YYYY-MM-DDT00:00:00.000Z', 시간대 변환 없이 날짜만 사용 */}
                     <td className="whitespace-nowrap px-3 py-2">{t.date.slice(0, 10)}</td>
-                    <td className="px-3 py-2">{t.merchantName}</td>
+                    <td className="px-3 py-2">
+                      {t.merchantName}
+                      <button
+                        onClick={() => handleMemo(t)}
+                        disabled={busyId !== null}
+                        className="ml-1 text-xs text-gray-400 hover:text-indigo-600"
+                        title="메모"
+                        aria-label={`${t.merchantName} 메모 ${t.description ? '수정' : '추가'}`}
+                      >
+                        ✎
+                      </button>
+                      {t.description && <div className="text-xs text-gray-500">{t.description}</div>}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       {won(t.amount)}
                       {t.originalAmount !== null && !t.installmentMonths && (
@@ -331,7 +379,26 @@ export default function TransactionsPage() {
                         <span className="text-xs text-gray-400">일시불</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">{t.category.name}</td>
+                    <td className="px-3 py-2">
+                      {categoryOptions.length > 0 ? (
+                        <select
+                          value={t.category.id}
+                          onChange={(e) => handleUpdate(t.id, { categoryId: e.target.value })}
+                          disabled={busyId !== null}
+                          aria-label={`${t.merchantName} 카테고리`}
+                          className="rounded border border-transparent bg-transparent py-0.5 hover:border-gray-300"
+                        >
+                          {categoryOptions.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.parentId ? '└ ' : ''}
+                              {c.icon} {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        t.category.name
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-gray-600">
                       {t.cardCompany.name}
                       {t.card && ` ··${t.card.last4}`}
