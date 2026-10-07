@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { PrismaService } from '../database/prisma.service';
-import { AIService } from '../files/ai.service';
+import { AIService, REVIEW_THRESHOLD } from '../files/ai.service';
 
 @Injectable()
 export class GmailService {
@@ -65,11 +65,12 @@ export class GmailService {
           // AI로 카테고리 분류
           const categories = await this.prisma.category.findMany({ where: { isActive: true } });
           const categoryNames = categories.map(c => c.name);
-          const suggestedCategory = await this.aiService.categorizeTransaction(
+          const result = await this.aiService.categorizeTransaction(
             parsed.merchantName,
             categoryNames
           );
-          const category = categories.find(c => c.name === suggestedCategory) || categories[0];
+          const matched = categories.find(c => c.name === result.category);
+          const category = matched || categories[0];
 
           const transaction = await this.prisma.transaction.create({
             data: {
@@ -79,6 +80,8 @@ export class GmailService {
               cardCompanyId: cardCompany.id,
               userId: userId,
               categoryId: category.id,
+              confidence: matched ? result.confidence : null,
+              needsReview: !matched || result.confidence < REVIEW_THRESHOLD,
             },
           });
 

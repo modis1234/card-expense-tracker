@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
-import { AIService } from './ai.service';
+import { AIService, CategorizeResult, REVIEW_THRESHOLD } from './ai.service';
 
 export interface ParsedTransaction {
   date: string;
@@ -52,7 +52,7 @@ export class FilesService {
     });
 
     // Gemini 카테고리 분류 (선택적)
-    let categorizedResults: string[] = [];
+    let categorizedResults: (CategorizeResult | undefined)[] = [];
     const useAI = process.env.USE_AI_CATEGORIZATION === 'true';
     
     if (useAI) {
@@ -85,10 +85,18 @@ export class FilesService {
     await this.prisma.transaction.createMany({
       data: validRows.map((row: any, index: number) => {
         let category = defaultCategory;
-        
-        if (categorizedResults[index]) {
-          const foundCategory = categories.find(c => c.name === categorizedResults[index]);
-          if (foundCategory) category = foundCategory;
+        let confidence: number | null = null;
+        let needsReview = false;
+
+        const result = categorizedResults[index];
+        const foundCategory = result && categories.find(c => c.name === result.category);
+        if (result && foundCategory) {
+          category = foundCategory;
+          confidence = result.confidence;
+          needsReview = result.confidence < REVIEW_THRESHOLD;
+        } else if (useAI) {
+          // AI 분류를 켰는데 결과가 없거나 목록에 없는 카테고리면 기본 카테고리 + 확인 필요
+          needsReview = true;
         }
         
         return {
@@ -100,6 +108,8 @@ export class FilesService {
           userId: userId,
           fileId: file.id,
           categoryId: category.id,
+          confidence,
+          needsReview,
         };
       }),
     });
@@ -149,19 +159,23 @@ export class FilesService {
     const categories = await this.prisma.category.findMany({ where: { isActive: true } });
     const categoryNames = categories.map(c => c.name);
 
-    const suggestedCategory = await this.aiService.categorizeTransaction(
+    const result = await this.aiService.categorizeTransaction(
       transaction.merchantName,
       categoryNames
     );
 
-    const category = categories.find(c => c.name === suggestedCategory);
+    const category = categories.find(c => c.name === result.category);
     if (category) {
       await this.prisma.transaction.update({
         where: { id: transactionId },
-        data: { categoryId: category.id },
+        data: {
+          categoryId: category.id,
+          confidence: result.confidence,
+          needsReview: result.confidence < REVIEW_THRESHOLD,
+        },
       });
     }
 
-    return suggestedCategory;
+    return result.category;
   }
 }
