@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { PrismaService } from '../database/prisma.service';
-import { AIService, REVIEW_THRESHOLD } from '../files/ai.service';
+import { AIService, needsReviewFor } from '../files/ai.service';
 
 @Injectable()
 export class GmailService {
@@ -81,7 +81,7 @@ export class GmailService {
               userId: userId,
               categoryId: category.id,
               confidence: matched ? result.confidence : null,
-              needsReview: !matched || result.confidence < REVIEW_THRESHOLD,
+              needsReview: !matched || needsReviewFor(parsed.merchantName, result.confidence),
             },
           });
 
