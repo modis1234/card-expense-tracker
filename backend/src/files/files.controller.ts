@@ -1,10 +1,12 @@
 import {
+  Body,
   Controller,
   Post,
   UploadedFile,
   UseInterceptors,
   ParseFilePipe,
   FileTypeValidator,
+  HttpCode,
   Param,
   Put,
   Req,
@@ -15,6 +17,7 @@ import { ApiConsumes, ApiBody, ApiTags, ApiOperation, ApiBearerAuth } from '@nes
 import { FilesService } from './files.service';
 import { randomUUID } from 'crypto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RecategorizeTransactionsDto } from './dto/recategorize-transactions.dto';
 
 @ApiTags('files')
 @ApiBearerAuth()
@@ -60,6 +63,17 @@ export class FilesController {
       fileSize: file.size,
     });
     return { message: `파일 업로드 및 저장 완료 (${count}건)`, count };
+  }
+
+  @Post('transactions/recategorize')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '거래 내역 일괄 재분류 (Gemini)',
+    description: 'ids의 거래(본인 거래만)를 Gemini 일괄 분류로 다시 분류해 카테고리·신뢰도·확인 필요 여부를 갱신합니다. AI 응답이 없거나 목록에 없는 카테고리면 해당 거래는 그대로 둡니다.',
+  })
+  async recategorizeTransactions(@Req() req: any, @Body() dto: RecategorizeTransactionsDto) {
+    const { total, updated } = await this.filesService.recategorizeTransactions(req.user.userId, dto.ids);
+    return { message: `${total}건 중 ${updated}건 재분류 완료`, total, updated };
   }
 
   @Put('transactions/:id/recategorize')
