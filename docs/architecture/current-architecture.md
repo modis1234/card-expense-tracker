@@ -17,7 +17,7 @@ graph TB
         Auth[AuthModule<br/>Google OAuth → JWT]
         Files[FilesModule<br/>엑셀 업로드·파싱·저장]
         AI[AIService<br/>Gemini 분류]
-        Gmail[GmailModule<br/>승인 메일 동기화]
+        Gmail[GmailModule<br/>명세서 메일 불러오기]
         Tx[TransactionsModule<br/>거래 조회]
         Cards[CardsModule<br/>카드 / 카드그룹]
         CC[CardCompaniesModule]
@@ -33,7 +33,7 @@ graph TB
     Auth --> Google
     Gmail --> Google
     Files --> AI
-    Gmail --> AI
+    Gmail --> Files
     AI --> Gemini
     Auth & Files & Gmail & Tx & Cards & CC & Users --> DB
     DB --> PG
@@ -67,11 +67,11 @@ backend/src/
 ├── files/                      # 엑셀 업로드 + 재분류 + AIService
 │   ├── files.service.ts        # 파싱·카드 매칭·저장을 한 서비스에서 처리
 │   └── ai.service.ts           # Gemini 호출 (GmailModule도 사용)
-├── gmail/                      # Gmail 승인 메일 → 거래 저장
+├── gmail/                      # Gmail 하나카드 명세서 메일 → FilesService로 저장
 └── transactions/               # 거래 조회 (GET만)
 ```
 
-모듈 의존: 모든 모듈 → `DatabaseModule`, `GmailModule` → `FilesModule`(AIService 재사용).
+모듈 의존: 모든 모듈 → `DatabaseModule`, `GmailModule` → `FilesModule`(명세서 저장 경로 재사용).
 
 ---
 
@@ -112,7 +112,7 @@ erDiagram
 | POST/GET/PATCH/DELETE | `/card-groups`, `/card-groups/:id` | 카드그룹 CRUD |
 | POST | `/files/upload` | 엑셀 업로드 (`file`, xlsx/xls) |
 | PUT | `/files/transactions/:id/recategorize` | 거래 1건 Gemini 재분류 |
-| GET | `/gmail/sync` | Gmail 승인 메일 동기화 |
+| POST | `/gmail/sync` | Gmail 하나카드 명세서 메일 불러오기 |
 | GET | `/transactions?groupId&cardId&from&to` | 거래 조회 (페이지네이션 없음) |
 
 ---
@@ -167,28 +167,29 @@ sequenceDiagram
 - 카드사 판별은 **파일명** 기준입니다. 엑셀 컬럼 매핑은 현대카드 형식 하나로 고정되어 있어, 다른 카드사 엑셀은 사실상 지원하지 않습니다.
 - AI 결과가 없거나 카테고리 목록에 없으면 첫 번째 활성 카테고리로 저장하고 `needsReview = true`로 둡니다.
 
-### 3. Gmail 동기화
+### 3. Gmail 명세서 불러오기
 
 ```mermaid
 sequenceDiagram
     actor U as 사용자
     participant S as GmailService
     participant GA as Gmail API
-    participant AI as AIService
+    participant F as FilesService
     participant DB as PostgreSQL
 
-    U->>S: GET /gmail/sync
-    S->>DB: 저장된 Gmail 토큰 조회
-    S->>GA: '현대카드' 메일 검색 (최대 50건)
+    U->>S: POST /gmail/sync (거래내역 '불러오기' 버튼)
+    S->>DB: 저장된 Gmail 토큰 조회 (만료 시 refresh token으로 갱신·저장)
+    S->>GA: '이용대금명세서 (from:hanacard.co.kr OR 하나카드) newer_than:1y' 검색 (최대 12통)
     loop 메일마다
-        S->>S: 본문(text/html) → 정규식으로 금액·가맹점 추출
-        S->>AI: categorizeTransaction(가맹점명)
-        S->>DB: Transaction 생성 (confidence, needsReview)
+        S->>S: 본문 text/html 파트 추출 (charset 디코딩)
+        S->>F: parseAndSaveFile (업로드와 같은 경로: 파싱·AI 분류·저장)
+        F-->>S: 저장 건수 또는 409(이미 등록된 청구월)·400(파싱 실패)
     end
-    S-->>U: 생성된 거래 목록
+    S-->>U: 확인한 메일 수, 저장한 명세서, 건너뛴 메일과 이유
 ```
 
-- 검색 쿼리는 현대카드로 고정이고, 이미 저장한 메일인지 확인하지 않습니다(재실행 시 중복 저장).
+- 메일 본문이 명세서 HTML 그 자체인 경우만 처리합니다. 보안메일(암호화 첨부)은 건너뜁니다.
+- 같은 카드사·청구월 거래가 이미 있으면 저장하지 않아(409), 직접 업로드한 명세서와 중복되지 않습니다.
 
 ### 4. 재분류
 
@@ -210,7 +211,7 @@ sequenceDiagram
 | Feedback Service | 수정 이력 학습 | 없음 (`UserFeedback` 테이블만) |
 | 공통 필터·인터셉터 (`common/`) | 있음 | 없음 |
 | Frontend | Next.js (Vercel) | 없음 |
-| Gmail 연동 | Phase 2 계획 | 구현됨 (현대카드 한정) |
+| Gmail 연동 | Phase 2 계획 | 구현됨 (하나카드 명세서 메일) |
 | 카드 / 카드그룹 | 설계에 없음 | 구현됨 |
 
 ---
@@ -220,5 +221,5 @@ sequenceDiagram
 - `/users` 엔드포인트에 인증 가드가 없습니다.
 - `needsReview` 거래만 골라 조회하는 API가 없습니다.
 - `/transactions` 조회에 페이지네이션이 없습니다.
-- Gmail 동기화를 다시 실행하면 같은 메일의 거래가 중복 저장됩니다.
+- 청구월이 없는 현대카드 엑셀은 같은 파일을 다시 올리면 중복 저장됩니다.
 - 하나카드 HTML 명세서(`samples/hana/`)는 분석만 했고 파서는 없습니다.
