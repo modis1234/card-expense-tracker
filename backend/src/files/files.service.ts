@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
 import { AIService, CategorizeResult, isPaymentOnlyMerchant, needsReviewFor } from './ai.service';
@@ -37,6 +37,16 @@ export class FilesService {
       throw new BadRequestException(`명세서 파싱 실패: ${error.message}`);
     }
     if (validRows.length === 0) throw new BadRequestException('파일에서 거래 내역을 찾지 못했습니다.');
+
+    // 같은 카드사·청구월 명세서가 이미 있으면 중복 저장하지 않음 (직접 업로드·Gmail 불러오기 공통)
+    // ponytail: 청구월이 없는 현대카드 엑셀은 확인 안 함
+    const billingMonth = validRows[0].billingMonth;
+    if (billingMonth) {
+      const existing = await this.prisma.transaction.findFirst({
+        where: { userId, cardCompanyId: cardCompany.id, billingMonth },
+      });
+      if (existing) throw new ConflictException(`이미 등록된 ${cardCompany.name} ${billingMonth} 명세서입니다.`);
+    }
 
     const file = await this.prisma.file.create({
       data: {
