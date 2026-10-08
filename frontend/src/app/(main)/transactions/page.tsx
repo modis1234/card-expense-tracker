@@ -31,6 +31,7 @@ export default function TransactionsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [categoryOptions, setCategoryOptions] = useState<ICategory[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<{ subject: string; reason: string }[]>([]);
   const [search, setSearch] = useState('');
   // 체크 해제한 카테고리 id (새로 생긴 카테고리는 기본으로 보이게)
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
@@ -136,6 +137,26 @@ export default function TransactionsPage() {
     [load],
   );
 
+  // Gmail 명세서 메일 불러오기: 메일마다 AI 분류를 거쳐 수십 초 걸릴 수 있음
+  const handleGmailImport = useCallback(async () => {
+    setBusyId('gmail');
+    setRowError(null);
+    setNotice(null);
+    setSkipped([]);
+    try {
+      const res = await apiFetch<{ message: string; skipped: { subject: string; reason: string }[] }>('/gmail/sync', {
+        method: 'POST',
+      });
+      setNotice(res.message);
+      setSkipped(res.skipped);
+      setResult(await load());
+    } catch (e) {
+      setRowError(`Gmail 불러오기 실패: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  }, [load]);
+
   const handleBulkRecategorize = useCallback(
     async (ids: string[]) => {
       setBusyId('bulk-recat');
@@ -215,6 +236,16 @@ export default function TransactionsPage() {
     </th>
   );
 
+  const filtered = from !== '' || to !== '' || search !== '' || reviewOnly || hiddenCategories.size > 0;
+  const resetFilters = () => {
+    setFrom('');
+    setTo('');
+    setSearch('');
+    setReviewOnly(false);
+    setHiddenCategories(new Set());
+    setSelected(new Set());
+  };
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -225,7 +256,17 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold">거래내역</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-xl font-bold">거래내역</h1>
+        <button
+          onClick={handleGmailImport}
+          disabled={busyId !== null}
+          className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          title="로그인한 Google 계정에서 최근 1년 하나카드 이용대금명세서 메일을 찾아 저장합니다"
+        >
+          {busyId === 'gmail' ? 'Gmail 확인 중...' : 'Gmail에서 불러오기'}
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-end gap-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
         <label className="flex flex-col gap-1">
@@ -250,6 +291,14 @@ export default function TransactionsPage() {
           <input type="checkbox" checked={reviewOnly} onChange={(e) => setReviewOnly(e.target.checked)} />
           확인 필요만
         </label>
+        <button
+          onClick={resetFilters}
+          disabled={!filtered}
+          className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          title="기간·가맹점 검색·확인 필요만·카테고리 필터를 모두 해제합니다"
+        >
+          초기화
+        </button>
         <button
           onClick={() => handleBulkRecategorize(selectedIds)}
           disabled={selectedIds.length === 0 || busyId !== null}
@@ -294,6 +343,18 @@ export default function TransactionsPage() {
 
       {rowError && <p className="text-sm text-red-600">{rowError}</p>}
       {notice && <p className="text-sm text-green-700">{notice}</p>}
+      {skipped.length > 0 && (
+        <details className="text-sm text-gray-600">
+          <summary className="cursor-pointer">건너뛴 메일 {skipped.length}건 보기</summary>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {skipped.map((s, i) => (
+              <li key={i}>
+                {s.subject} — <span className="text-gray-500">{s.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {loading ? (
         <p className="py-12 text-center text-gray-500">불러오는 중...</p>
