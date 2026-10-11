@@ -1,7 +1,7 @@
-import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
-import { AIService, CategorizeResult, REVIEW_THRESHOLD } from './ai.service';
+import { AIService, CategorizeResult, isPaymentOnlyMerchant, needsReviewFor } from './ai.service';
 import { StatementRow, parseHanaHtml } from './parsers/hana-html.parser';
 
 export interface ParsedTransaction {
@@ -37,6 +37,16 @@ export class FilesService {
       throw new BadRequestException(`명세서 파싱 실패: ${error.message}`);
     }
     if (validRows.length === 0) throw new BadRequestException('파일에서 거래 내역을 찾지 못했습니다.');
+
+    // 같은 카드사·청구월 명세서가 이미 있으면 중복 저장하지 않음 (직접 업로드·Gmail 불러오기 공통)
+    // ponytail: 청구월이 없는 현대카드 엑셀은 확인 안 함
+    const billingMonth = validRows[0].billingMonth;
+    if (billingMonth) {
+      const existing = await this.prisma.transaction.findFirst({
+        where: { userId, cardCompanyId: cardCompany.id, billingMonth },
+      });
+      if (existing) throw new ConflictException(`이미 등록된 ${cardCompany.name} ${billingMonth} 명세서입니다.`);
+    }
 
     const file = await this.prisma.file.create({
       data: {
@@ -94,9 +104,9 @@ export class FilesService {
         if (result && foundCategory) {
           category = foundCategory;
           confidence = result.confidence;
-          needsReview = result.confidence < REVIEW_THRESHOLD;
-        } else if (useAI) {
-          // AI 분류를 켰는데 결과가 없거나 목록에 없는 카테고리면 기본 카테고리 + 확인 필요
+          needsReview = needsReviewFor(row.merchantName, result.confidence);
+        } else if (useAI || isPaymentOnlyMerchant(row.merchantName)) {
+          // AI 분류를 켰는데 결과가 없거나 목록에 없는 카테고리, 또는 결제수단 이름뿐인 가맹점이면 확인 필요
           needsReview = true;
         }
         
@@ -195,7 +205,7 @@ export class FilesService {
         data: {
           categoryId: category.id,
           confidence: result.confidence,
-          needsReview: result.confidence < REVIEW_THRESHOLD,
+          needsReview: needsReviewFor(transaction.merchantName, result.confidence),
         },
       });
     }
@@ -215,7 +225,7 @@ export class FilesService {
     const categoryNames = categories.map((c) => c.name);
 
     // ponytail: 50건씩 순차 호출, 수백 건 이상을 자주 돌리면 병렬화나 백그라운드 작업으로
-    const updates: { id: string; categoryId: string; confidence: number }[] = [];
+    const updates: { id: string; categoryId: string; confidence: number; needsReview: boolean }[] = [];
     for (let i = 0; i < transactions.length; i += 50) {
       const chunk = transactions.slice(i, i + 50);
       let results: (CategorizeResult | undefined)[];
@@ -227,7 +237,13 @@ export class FilesService {
       chunk.forEach((t, j) => {
         const result = results[j];
         const category = result && categories.find((c) => c.name === result.category);
-        if (result && category) updates.push({ id: t.id, categoryId: category.id, confidence: result.confidence });
+        if (result && category)
+          updates.push({
+            id: t.id,
+            categoryId: category.id,
+            confidence: result.confidence,
+            needsReview: needsReviewFor(t.merchantName, result.confidence),
+          });
       });
     }
 
@@ -235,7 +251,7 @@ export class FilesService {
       updates.map((u) =>
         this.prisma.transaction.update({
           where: { id: u.id },
-          data: { categoryId: u.categoryId, confidence: u.confidence, needsReview: u.confidence < REVIEW_THRESHOLD },
+          data: { categoryId: u.categoryId, confidence: u.confidence, needsReview: u.needsReview },
         }),
       ),
     );

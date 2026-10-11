@@ -59,6 +59,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return body as T;
 }
 
+export interface ICategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  parentId: string | null;
+}
+
 export interface ITransaction {
   id: string;
   date: string;
@@ -72,6 +80,8 @@ export interface ITransaction {
   /** 청구월 'YYYY-MM' (하나카드 명세서). null이면 이용일 기준 */
   billingMonth: string | null;
   merchantName: string;
+  /** 사용자 메모 */
+  description: string | null;
   confidence: string | null;
   needsReview: boolean;
   category: { id: string; name: string; icon: string; color: string };

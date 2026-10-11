@@ -1,24 +1,28 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { GmailService } from './gmail.service';
+import { Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { GmailService } from './gmail.service';
 
 @ApiTags('gmail')
 @Controller('gmail')
 export class GmailController {
   constructor(private readonly gmailService: GmailService) {}
 
-  @Get('sync')
+  @Post('sync')
+  @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Gmail에서 카드 거래 내역 동기화' })
+  @ApiOperation({
+    summary: 'Gmail에서 카드 명세서 불러오기',
+    description:
+      '로그인한 Google 계정에서 최근 1년 하나카드 이용대금명세서 메일(최대 12통)을 찾아 업로드와 같은 방식으로 저장합니다. 이미 등록된 청구월 명세서는 건너뜁니다.',
+  })
   async syncCardEmails(@Req() req: any) {
-    const userId = req.user.userId;
-    const transactions = await this.gmailService.syncCardEmails(userId);
+    const result = await this.gmailService.importStatements(req.user.userId);
+    const saved = result.imported.reduce((sum, i) => sum + i.count, 0);
     return {
-      message: '이메일 동기화 완료',
-      count: transactions.length,
-      transactions,
+      message: `메일 ${result.scanned}통 확인 · 명세서 ${result.imported.length}건(거래 ${saved}건) 저장 · ${result.skipped.length}건 건너뜀`,
+      ...result,
     };
   }
 }

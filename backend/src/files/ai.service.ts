@@ -9,6 +9,51 @@ export interface CategorizeResult {
 // 신뢰도가 이 값 미만이면 needsReview (docs/design/database-schema.md 비즈니스 규칙)
 export const REVIEW_THRESHOLD = 0.8;
 
+// 결제수단·결제대행사 이름만 있는 가맹점 토큰 (공백·'주식회사'·'(주)'·'(구)' 제거, 소문자)
+// ponytail: 고정 목록, 새 페이·PG사가 보이면 여기에 추가
+const PAYMENT_ONLY_TOKENS = new Set([
+  '네이버페이',
+  '카카오페이',
+  '카카오',
+  '토스',
+  '토스페이',
+  '토스페이먼츠',
+  '페이코',
+  'payco',
+  '스마일페이',
+  '코페이',
+  '갤럭시아',
+  '섹타나인',
+  'sms결제',
+  '다날',
+  '페이레터',
+  '헥토파이낸셜',
+  '이니시스',
+  'kg이니시스',
+  '나이스정보통신',
+  '나이스페이',
+  'kicc',
+  'kcp',
+  'nhnkcp',
+  'ksnet',
+  '스마트로',
+]);
+
+// 예: '네이버페이', '주식회사 카카오_카카오_카카오페이', '코페이_코페이(구)_갤럭시아'
+// → 실제 구매처를 알 수 없어 AI가 그럴듯하게 답해도 믿을 근거가 없음
+export function isPaymentOnlyMerchant(merchantName: string): boolean {
+  const tokens = merchantName
+    .split('_')
+    .map((t) => t.replace(/주식회사|\(주\)|\(구\)|\s/g, '').toLowerCase())
+    .filter(Boolean);
+  return tokens.length > 0 && tokens.every((t) => PAYMENT_ONLY_TOKENS.has(t));
+}
+
+// 사용자 확인이 필요한 거래: 신뢰도 낮음 또는 결제수단 이름뿐인 가맹점
+export function needsReviewFor(merchantName: string, confidence: number): boolean {
+  return confidence < REVIEW_THRESHOLD || isPaymentOnlyMerchant(merchantName);
+}
+
 @Injectable()
 export class AIService {
   private ai: GoogleGenAI;
@@ -17,7 +62,10 @@ export class AIService {
     this.ai = new GoogleGenAI({});
   }
 
-  async categorizeTransaction(merchantName: string, categories: string[]): Promise<CategorizeResult> {
+  async categorizeTransaction(
+    merchantName: string,
+    categories: string[],
+  ): Promise<CategorizeResult> {
     const prompt = `다음 가맹점명을 보고 가장 적절한 카테고리를 선택해주세요.
 
 가맹점명: ${merchantName}
@@ -34,11 +82,17 @@ export class AIService {
     console.log('Gemini 응답:', response.text);
     const parsed = this.parseJson(response.text);
     if (!parsed?.category) return { category: categories[0], confidence: 0 };
-    return { category: String(parsed.category).trim(), confidence: this.toConfidence(parsed.confidence) };
+    return {
+      category: String(parsed.category).trim(),
+      confidence: this.toConfidence(parsed.confidence),
+    };
   }
 
   // 결과는 입력 순서와 같은 인덱스로 반환. 응답에서 빠진 항목은 undefined
-  async categorizeBatch(transactions: Array<{ merchantName: string }>, categories: string[]): Promise<(CategorizeResult | undefined)[]> {
+  async categorizeBatch(
+    transactions: Array<{ merchantName: string }>,
+    categories: string[],
+  ): Promise<(CategorizeResult | undefined)[]> {
     const prompt = `다음 가맹점명들을 보고 각각에 가장 적절한 카테고리를 선택해주세요.
 
 가맹점명 목록:
@@ -60,7 +114,10 @@ ${transactions.map((t, i) => `${i + 1}. ${t.merchantName}`).join('\n')}
     for (const item of Array.isArray(parsed) ? parsed : []) {
       const i = Number(item?.index) - 1;
       if (Number.isInteger(i) && i >= 0 && i < transactions.length && item.category) {
-        results[i] = { category: String(item.category).trim(), confidence: this.toConfidence(item.confidence) };
+        results[i] = {
+          category: String(item.category).trim(),
+          confidence: this.toConfidence(item.confidence),
+        };
       }
     }
     return results;
