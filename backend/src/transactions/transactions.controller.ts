@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UseGuards, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TransactionsService } from './transactions.service';
+import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { FindTransactionsDto } from './dto/find-transactions.dto';
 import { DeleteTransactionsDto } from './dto/delete-transactions.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
@@ -20,6 +21,15 @@ export class TransactionsController {
   })
   findAll(@Req() req: any, @Query() query: FindTransactionsDto) {
     return this.transactionsService.findAll(req.user.userId, query);
+  }
+
+  @Post()
+  @ApiOperation({
+    summary: '거래 직접 추가',
+    description: '카드 명세서에 없는 지출(관리비·공과금·대출이자 등)을 직접 입력합니다. 카드사·카드 없이 저장되고 확인 필요는 해제 상태입니다.',
+  })
+  create(@Req() req: any, @Body() dto: CreateTransactionDto) {
+    return this.transactionsService.create(req.user.userId, dto);
   }
 
   @Patch(':id')

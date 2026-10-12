@@ -107,7 +107,8 @@ model Transaction {
   billingMonth      String?
   description       String?
   confidence        Decimal?       @db.Decimal(3, 2)
-  cardCompanyId     String
+  /// 직접 입력한 거래는 카드사 없음
+  cardCompanyId     String?
   cardId            String?
   categoryId        String
   createdAt         DateTime       @default(now())
@@ -116,7 +117,7 @@ model Transaction {
   needsReview       Boolean        @default(false)
   updatedAt         DateTime       @updatedAt
   userId            String
-  cardCompany       CardCompany    @relation(fields: [cardCompanyId], references: [id])
+  cardCompany       CardCompany?   @relation(fields: [cardCompanyId], references: [id])
   card              Card?          @relation(fields: [cardId], references: [id], onDelete: SetNull)
   category          Category       @relation(fields: [categoryId], references: [id])
   file              File?          @relation(fields: [fileId], references: [id])
