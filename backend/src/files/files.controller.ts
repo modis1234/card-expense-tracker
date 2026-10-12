@@ -57,12 +57,13 @@ export class FilesController {
     )
     file: Express.Multer.File,
   ) {
-    const count = await this.filesService.parseAndSaveFile(file.buffer, req.user.userId, {
+    const { count, uncategorized } = await this.filesService.parseAndSaveFile(file.buffer, req.user.userId, {
       filename: `${randomUUID()}-${file.originalname}`,
       originalName: file.originalname,
       fileSize: file.size,
     });
-    return { message: `파일 업로드 및 저장 완료 (${count}건)`, count };
+    const aiNote = uncategorized ? ` · AI 분류 실패 ${uncategorized}건은 미분류로 저장됨(거래내역에서 재분류하세요)` : '';
+    return { message: `파일 업로드 및 저장 완료 (${count}건)${aiNote}`, count, uncategorized };
   }
 
   @Post('transactions/recategorize')
