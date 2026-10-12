@@ -37,6 +37,10 @@ export default function TransactionsPage() {
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
   // 기본은 서버 정렬과 같은 날짜 내림차순
   const [sort, setSort] = useState<Sort>({ key: 'date', dir: 'desc' });
+  // 직접 추가 폼 (null이면 닫힘)
+  const [draft, setDraft] = useState<{ date: string; merchantName: string; amount: string; categoryId: string } | null>(
+    null,
+  );
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -136,6 +140,30 @@ export default function TransactionsPage() {
     },
     [load],
   );
+
+  // 카드 명세서에 없는 지출(관리비·대출이자 등) 직접 추가
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft) return;
+    setBusyId('create');
+    setRowError(null);
+    setNotice(null);
+    try {
+      await apiFetch('/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draft, amount: Number(draft.amount) }),
+      });
+      setNotice(`${draft.merchantName} ${won(Number(draft.amount))} 추가 완료`);
+      // 날짜·카테고리는 남겨 같은 달 고정 지출을 이어서 입력하기 쉽게
+      setDraft({ ...draft, merchantName: '', amount: '' });
+      setResult(await load());
+    } catch (e) {
+      setRowError(`추가 실패: ${(e as Error).message}`);
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   // Gmail 명세서 메일 불러오기: 메일마다 AI 분류를 거쳐 수십 초 걸릴 수 있음
   const handleGmailImport = useCallback(async () => {
@@ -258,15 +286,94 @@ export default function TransactionsPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">거래내역</h1>
-        <button
-          onClick={handleGmailImport}
-          disabled={busyId !== null}
-          className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-          title="로그인한 Google 계정에서 최근 1년 하나카드 이용대금명세서 메일을 찾아 저장합니다"
-        >
-          {busyId === 'gmail' ? 'Gmail 확인 중...' : 'Gmail에서 불러오기'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() =>
+              setDraft(
+                draft
+                  ? null
+                  : { date: new Date().toLocaleDateString('sv-SE'), merchantName: '', amount: '', categoryId: categoryOptions[0]?.id ?? '' },
+              )
+            }
+            className="rounded border border-indigo-300 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+            title="관리비·공과금·대출이자처럼 카드 명세서에 없는 지출을 직접 입력합니다"
+          >
+            {draft ? '닫기' : '직접 추가'}
+          </button>
+          <button
+            onClick={handleGmailImport}
+            disabled={busyId !== null}
+            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            title="로그인한 Google 계정에서 최근 1년 하나카드 이용대금명세서 메일을 찾아 저장합니다"
+          >
+            {busyId === 'gmail' ? 'Gmail 확인 중...' : 'Gmail에서 불러오기'}
+          </button>
+        </div>
       </div>
+
+      {draft && (
+        <form
+          onSubmit={handleCreate}
+          className="flex flex-wrap items-end gap-4 rounded-lg border border-indigo-200 bg-white p-4 text-sm"
+        >
+          <label className="flex flex-col gap-1">
+            날짜
+            <input
+              type="date"
+              required
+              value={draft.date}
+              onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+              className="rounded border border-gray-300 px-2 py-1"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            내용
+            <input
+              required
+              maxLength={100}
+              value={draft.merchantName}
+              onChange={(e) => setDraft({ ...draft, merchantName: e.target.value })}
+              placeholder="예: 10월 관리비"
+              className="rounded border border-gray-300 px-2 py-1"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            금액(원)
+            <input
+              type="number"
+              required
+              min={1}
+              step={1}
+              value={draft.amount}
+              onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+              className="w-32 rounded border border-gray-300 px-2 py-1"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            카테고리
+            <select
+              required
+              value={draft.categoryId}
+              onChange={(e) => setDraft({ ...draft, categoryId: e.target.value })}
+              className="rounded border border-gray-300 px-2 py-1"
+            >
+              {categoryOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.parentId ? '└ ' : ''}
+                  {c.icon} {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={busyId !== null}
+            className="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {busyId === 'create' ? '추가 중...' : '추가'}
+          </button>
+        </form>
+      )}
 
       <div className="flex flex-wrap items-end gap-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
         <label className="flex flex-col gap-1">
@@ -461,7 +568,7 @@ export default function TransactionsPage() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-gray-600">
-                      {t.cardCompany.name}
+                      {t.cardCompany?.name ?? '직접 입력'}
                       {t.card && ` ··${t.card.last4}`}
                       {t.card?.group && <span className="ml-1 rounded bg-gray-100 px-1.5 text-xs">{t.card.group.name}</span>}
                     </td>
