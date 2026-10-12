@@ -6,7 +6,7 @@ export default function LoginPage() {
   return (
     <main className="flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
-        <h1 className="text-2xl font-bold text-indigo-600">SmartExpense</h1>
+        <h1 className="text-2xl font-bold text-indigo-600">소비 리포트</h1>
         <p className="mt-1 text-sm text-gray-500">AI 기반 자동 분류 가계부</p>
         <a
           href={`${API_URL}/auth/google`}
