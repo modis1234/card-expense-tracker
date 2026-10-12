@@ -11,7 +11,7 @@ const MAX_MESSAGES = 12;
 
 export interface GmailImportResult {
   scanned: number;
-  imported: { subject: string; count: number }[];
+  imported: { subject: string; count: number; uncategorized: number }[];
   skipped: { subject: string; reason: string }[];
 }
 
@@ -77,12 +77,12 @@ export class GmailService {
       }
       try {
         const buffer = Buffer.from(html, 'utf8');
-        const count = await this.filesService.parseAndSaveFile(buffer, userId, {
+        const { count, uncategorized } = await this.filesService.parseAndSaveFile(buffer, userId, {
           filename: `gmail-${id}`,
           originalName: `${subject}.html`,
           fileSize: buffer.length,
         });
-        result.imported.push({ subject, count });
+        result.imported.push({ subject, count, uncategorized });
       } catch (error) {
         // 중복(409)·파싱 실패(400) 등은 해당 메일만 건너뜀
         if (!(error instanceof HttpException)) throw error;

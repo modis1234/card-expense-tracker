@@ -23,7 +23,7 @@ const Header = memo(() => {
   return (
     <header className="border-b border-gray-200 bg-white">
       <nav className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-        <span className="font-bold text-indigo-600">SmartExpense</span>
+        <span className="font-bold text-indigo-600">소비 리포트</span>
         {NAV.map(({ href, label }) => (
           <Link
             key={href}

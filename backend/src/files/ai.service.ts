@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
 
 export interface CategorizeResult {
@@ -56,6 +56,7 @@ export function needsReviewFor(merchantName: string, confidence: number): boolea
 
 @Injectable()
 export class AIService {
+  private readonly logger = new Logger(AIService.name);
   private ai: GoogleGenAI;
 
   constructor() {
@@ -79,9 +80,11 @@ export class AIService {
       config: { responseMimeType: 'application/json' },
     });
 
-    console.log('Gemini 응답:', response.text);
     const parsed = this.parseJson(response.text);
-    if (!parsed?.category) return { category: categories[0], confidence: 0 };
+    if (!parsed?.category) {
+      this.logger.warn(`Gemini 단건 응답 해석 실패 (응답 ${response.text?.length ?? 0}자)`);
+      return { category: categories[0], confidence: 0 };
+    }
     return {
       category: String(parsed.category).trim(),
       confidence: this.toConfidence(parsed.confidence),
@@ -108,10 +111,17 @@ ${transactions.map((t, i) => `${i + 1}. ${t.merchantName}`).join('\n')}
       config: { responseMimeType: 'application/json' },
     });
 
-    console.log('Gemini 배치 응답:', response.text);
     const parsed = this.parseJson(response.text);
+    // 배열 대신 {"results": [...]}처럼 감싸서 오는 경우도 허용
+    const items: any[] = Array.isArray(parsed)
+      ? parsed
+      : ((Object.values(parsed ?? {}).find(Array.isArray) as any[]) ?? []);
+    if (items.length === 0) {
+      // 응답 원문은 지출 내역이라 남기지 않고 길이만 기록
+      this.logger.warn(`Gemini 일괄 응답 해석 실패 (요청 ${transactions.length}건, 응답 ${response.text?.length ?? 0}자)`);
+    }
     const results: (CategorizeResult | undefined)[] = new Array(transactions.length);
-    for (const item of Array.isArray(parsed) ? parsed : []) {
+    for (const item of items) {
       const i = Number(item?.index) - 1;
       if (Number.isInteger(i) && i >= 0 && i < transactions.length && item.category) {
         results[i] = {

@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
 import { AIService, CategorizeResult, isPaymentOnlyMerchant, needsReviewFor } from './ai.service';
@@ -14,13 +14,18 @@ export interface ParsedTransaction {
 
 @Injectable()
 export class FilesService {
+  private readonly logger = new Logger(FilesService.name);
   constructor(
     private prisma: PrismaService,
     private aiService: AIService,
   ) {}
 
-  // 엑셀(현대카드) 또는 HTML 명세서(하나카드)를 파싱해 저장하고 저장 건수를 반환
-  async parseAndSaveFile(buffer: Buffer, userId: string, fileInfo: { filename: string; originalName: string; fileSize: number }): Promise<number> {
+  // 엑셀(현대카드) 또는 HTML 명세서(하나카드)를 파싱해 저장. 저장 건수와 AI 분류 실패(미분류로 저장된) 건수를 반환
+  async parseAndSaveFile(
+    buffer: Buffer,
+    userId: string,
+    fileInfo: { filename: string; originalName: string; fileSize: number },
+  ): Promise<{ count: number; uncategorized: number }> {
     const isHtml = /\.html?$/i.test(fileInfo.originalName);
     const html = isHtml ? buffer.toString('utf8') : '';
     // HTML은 파일명 대신 본문으로 카드사 판별 (메일에서 저장한 파일명이 제각각이라)
@@ -62,24 +67,13 @@ export class FilesService {
     const defaultCategory = await this.prisma.category.findFirst({ where: { isActive: true } });
     if (!defaultCategory) throw new BadRequestException('활성화된 카테고리가 없습니다. 먼저 카테고리를 생성하세요.');
 
-    // Gemini 카테고리 분류 (선택적)
-    let categorizedResults: (CategorizeResult | undefined)[] = [];
-    const useAI = process.env.USE_AI_CATEGORIZATION === 'true';
-    
-    if (useAI) {
-      try {
-        const categories = await this.prisma.category.findMany({ where: { isActive: true } });
-        const categoryNames = categories.map(c => c.name);
-        categorizedResults = await this.aiService.categorizeBatch(
-          validRows.map((row) => ({ merchantName: row.merchantName })),
-          categoryNames
-        );
-      } catch (error) {
-        console.warn('AI 카테고리 분류 실패, 기본 카테고리 사용:', error.message);
-      }
-    }
-
+    // Gemini 카테고리 분류 (선택적). 실패한 거래는 기본 카테고리 + 확인 필요로 저장하고 건수를 알려줌
     const categories = await this.prisma.category.findMany({ where: { isActive: true } });
+    const useAI = process.env.USE_AI_CATEGORIZATION === 'true';
+    const categorizedResults = useAI
+      ? await this.categorizeInChunks(validRows, categories.map((c) => c.name))
+      : [];
+    let uncategorized = 0;
 
     // 카드번호 끝 4자리로 카드 연결 (처음 보는 카드는 그룹 미지정으로 자동 등록)
     const cardIdByLast4 = new Map<string, string>();
@@ -108,6 +102,7 @@ export class FilesService {
         } else if (useAI || isPaymentOnlyMerchant(row.merchantName)) {
           // AI 분류를 켰는데 결과가 없거나 목록에 없는 카테고리, 또는 결제수단 이름뿐인 가맹점이면 확인 필요
           needsReview = true;
+          if (useAI) uncategorized++;
         }
         
         return {
@@ -128,7 +123,34 @@ export class FilesService {
         };
       }),
     });
-    return validRows.length;
+    if (uncategorized > 0) this.logger.warn(`AI 분류 실패 ${uncategorized}/${validRows.length}건, 기본 카테고리로 저장`);
+    return { count: validRows.length, uncategorized };
+  }
+
+  // Gemini 일괄 분류를 50건씩 나눠 호출하고, 답이 빠진 거래가 있는 묶음은 한 번 더 요청해 결과를 합침
+  // 끝내 답을 못 받은 거래는 undefined
+  // ponytail: 순차 호출, 수백 건 이상을 자주 돌리면 병렬화나 백그라운드 작업으로
+  private async categorizeInChunks(
+    items: { merchantName: string }[],
+    categoryNames: string[],
+  ): Promise<(CategorizeResult | undefined)[]> {
+    const results: (CategorizeResult | undefined)[] = [];
+    for (let i = 0; i < items.length; i += 50) {
+      const chunk = items.slice(i, i + 50);
+      const merged: (CategorizeResult | undefined)[] = new Array(chunk.length);
+      for (let attempt = 1; attempt <= 2 && merged.filter(Boolean).length < chunk.length; attempt++) {
+        try {
+          const answer = await this.aiService.categorizeBatch(chunk, categoryNames);
+          answer.forEach((r, j) => {
+            if (r && !merged[j]) merged[j] = r;
+          });
+        } catch (error) {
+          this.logger.warn(`AI 일괄 분류 요청 실패 (${chunk.length}건, ${attempt}회차): ${error.message}`);
+        }
+      }
+      results.push(...Array.from({ length: chunk.length }, (_, j) => merged[j]));
+    }
+    return results;
   }
 
   // 현대카드 엑셀: 9행부터 거래, 컬럼 순서 고정
@@ -224,28 +246,19 @@ export class FilesService {
     const categories = await this.prisma.category.findMany({ where: { isActive: true } });
     const categoryNames = categories.map((c) => c.name);
 
-    // ponytail: 50건씩 순차 호출, 수백 건 이상을 자주 돌리면 병렬화나 백그라운드 작업으로
+    const results = await this.categorizeInChunks(transactions, categoryNames);
     const updates: { id: string; categoryId: string; confidence: number; needsReview: boolean }[] = [];
-    for (let i = 0; i < transactions.length; i += 50) {
-      const chunk = transactions.slice(i, i + 50);
-      let results: (CategorizeResult | undefined)[];
-      try {
-        results = await this.aiService.categorizeBatch(chunk, categoryNames);
-      } catch (error) {
-        throw new BadGatewayException(`AI 분류 요청 실패: ${error.message}`);
-      }
-      chunk.forEach((t, j) => {
-        const result = results[j];
-        const category = result && categories.find((c) => c.name === result.category);
-        if (result && category)
-          updates.push({
-            id: t.id,
-            categoryId: category.id,
-            confidence: result.confidence,
-            needsReview: needsReviewFor(t.merchantName, result.confidence),
-          });
-      });
-    }
+    transactions.forEach((t, j) => {
+      const result = results[j];
+      const category = result && categories.find((c) => c.name === result.category);
+      if (result && category)
+        updates.push({
+          id: t.id,
+          categoryId: category.id,
+          confidence: result.confidence,
+          needsReview: needsReviewFor(t.merchantName, result.confidence),
+        });
+    });
 
     await this.prisma.$transaction(
       updates.map((u) =>

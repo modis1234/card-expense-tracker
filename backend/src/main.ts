@@ -6,8 +6,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  // CORS 설정
-  app.enableCors();
+  // CORS 설정: 운영에서는 프론트 주소(FRONTEND_URL)만 허용, 로컬 개발처럼 비어 있으면 전체 허용
+  // ponytail: 단일 주소만 허용, Vercel 미리보기 등 여러 주소가 운영 API를 불러야 하면 허용 목록으로
+  app.enableCors({ origin: process.env.FRONTEND_URL || true });
   
   // 전역 Validation Pipe 설정
   app.useGlobalPipes(new ValidationPipe({ 
