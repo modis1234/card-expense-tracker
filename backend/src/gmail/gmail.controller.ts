@@ -20,8 +20,10 @@ export class GmailController {
   async syncCardEmails(@Req() req: any) {
     const result = await this.gmailService.importStatements(req.user.userId);
     const saved = result.imported.reduce((sum, i) => sum + i.count, 0);
+    const uncategorized = result.imported.reduce((sum, i) => sum + i.uncategorized, 0);
+    const aiNote = uncategorized ? ` · AI 분류 실패 ${uncategorized}건(미분류, 거래내역에서 재분류하세요)` : '';
     return {
-      message: `메일 ${result.scanned}통 확인 · 명세서 ${result.imported.length}건(거래 ${saved}건) 저장 · ${result.skipped.length}건 건너뜀`,
+      message: `메일 ${result.scanned}통 확인 · 명세서 ${result.imported.length}건(거래 ${saved}건) 저장 · ${result.skipped.length}건 건너뜀${aiNote}`,
       ...result,
     };
   }
