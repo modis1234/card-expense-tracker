@@ -15,7 +15,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiBody, ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { FilesService } from './files.service';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RecategorizeTransactionsDto } from './dto/recategorize-transactions.dto';
 

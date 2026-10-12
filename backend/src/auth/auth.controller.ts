@@ -23,7 +23,7 @@ export class AuthController {
     status: 302, 
     description: 'Google 로그인 페이지로 리디렉션' 
   })
-  async googleAuth(@Req() req: any) {
+  async googleAuth() {
     // Google 로그인 페이지로 리다이렉트
   }
 

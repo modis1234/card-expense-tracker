@@ -92,7 +92,7 @@
     "parser": {
       "unsafeParameterDecoratorsEnabled": true
     },
-    "globals": ["describe", "it", "expect", "beforeEach", "afterEach", "beforeAll", "afterAll", "jest"],
+    "globals": ["describe", "it", "expect", "beforeEach", "afterEach", "beforeAll", "afterAll", "jest", "Express"],
     "formatter": {
       "quoteStyle": "single",
       "trailingCommas": "all",
