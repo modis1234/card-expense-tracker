@@ -1,0 +1,5 @@
+# 개인 Claude Code 설정 (로컬 절대경로 포함)
+.claude/settings.json
+
+# graphify 지식 그래프 생성물
+graphify-out/

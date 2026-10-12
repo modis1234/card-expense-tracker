@@ -86,6 +86,7 @@ export interface ITransaction {
   confidence: string | null;
   needsReview: boolean;
   category: { id: string; name: string; icon: string; color: string };
-  cardCompany: { id: string; name: string };
+  /** 직접 입력한 거래는 null */
+  cardCompany: { id: string; name: string } | null;
   card: { id: string; last4: string; alias: string | null; group: { id: string; name: string } | null } | null;
 }
