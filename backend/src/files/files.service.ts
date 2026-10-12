@@ -78,13 +78,13 @@ export class FilesService {
   // 명세서 파일을 파싱해 저장. 저장 건수와 AI 분류 실패(미분류로 저장된) 건수를 반환
   // 하나카드 HTML·현대카드 엑셀은 전용 파서, 그 외 카드사나 형식(PDF·이미지·CSV 등)은 Gemini로 추출
   async parseAndSaveFile(
-    buffer: Buffer,
+    upload: Buffer,
     userId: string,
     fileInfo: { filename: string; originalName: string; fileSize: number },
     password?: string,
   ): Promise<{ count: number; uncategorized: number; aiExtracted: boolean }> {
     const name = fileInfo.originalName;
-    if (/\.xlsx?$/i.test(name)) buffer = await this.decryptExcel(buffer, password);
+    const buffer = /\.xlsx?$/i.test(name) ? await this.decryptExcel(upload, password) : upload;
     const isHtml = /\.html?$/i.test(name);
     const html = isHtml ? buffer.toString('utf8') : '';
     // HTML은 파일명 대신 본문으로 카드사 판별 (메일에서 저장한 파일명이 제각각이라)
@@ -292,7 +292,7 @@ export class FilesService {
       header: ['date', 'cardNumber', 'merchantName', 'approvalAmount', 'amount', 'vat', 'relation', 'installment', 'status', 'merchantNumber', 'businessNumber']
     });
     return rows
-      .filter((row) => !isNaN(new Date(row.date).getTime()) && row.merchantName)
+      .filter((row) => !Number.isNaN(new Date(row.date).getTime()) && row.merchantName)
       .map((row) => ({
         date: new Date(row.date),
         merchantName: String(row.merchantName),

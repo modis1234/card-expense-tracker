@@ -21,9 +21,9 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npx prisma generate
+      - run: npm run lint
       - run: npm run build
       - run: npm test
-      # ponytail: biome lint는 기존 오류 5건이 있어 제외, 정리 후 `npm run lint` 단계 추가
 
   frontend:
     runs-on: ubuntu-latest
