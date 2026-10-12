@@ -1,0 +1,35 @@
+-- 국내 카드사·은행·인터넷은행·간편결제 기본 등록 (files.service.ts CARD_COMPANIES와 같은 목록)
+-- 이미 같은 코드나 이름으로 등록된 카드사는 건너뜀
+INSERT INTO "card_companies" ("id", "name", "code", "updatedAt")
+VALUES
+    (gen_random_uuid()::text, '카카오뱅크', 'KAKAOBANK', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '카카오페이', 'KAKAOPAY', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '토스뱅크', 'TOSSBANK', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '토스', 'TOSS', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '케이뱅크', 'KBANK', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '네이버페이', 'NAVERPAY', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '페이코', 'PAYCO', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '현대카드', 'HYUNDAI', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '신한카드', 'SHINHAN', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '삼성카드', 'SAMSUNG', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '롯데카드', 'LOTTE', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'KB국민카드', 'KB', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '우리카드', 'WOORI', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '하나카드', 'HANA', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'BC카드', 'BC', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'NH농협카드', 'NH', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'IBK기업은행', 'IBK', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '씨티카드', 'CITI', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'SC제일은행', 'SC', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '수협은행', 'SUHYUP', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'KDB산업은행', 'KDB', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'iM뱅크', 'IM', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'BNK부산은행', 'BUSAN', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'BNK경남은행', 'KYONGNAM', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '광주은행', 'KWANGJU', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '전북은행', 'JEONBUK', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '제주은행', 'JEJU', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '우체국', 'POST', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, 'MG새마을금고', 'MG', CURRENT_TIMESTAMP),
+    (gen_random_uuid()::text, '신협', 'CU', CURRENT_TIMESTAMP)
+ON CONFLICT DO NOTHING;
