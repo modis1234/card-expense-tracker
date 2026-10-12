@@ -5,7 +5,7 @@ import {
   UploadedFile,
   UseInterceptors,
   ParseFilePipe,
-  FileTypeValidator,
+  MaxFileSizeValidator,
   HttpCode,
   Param,
   Put,
@@ -28,15 +28,16 @@ export class FilesController {
 
   @Post('upload')
   @ApiOperation({
-    summary: '카드 거래내역 파일 업로드 (엑셀 / HTML 명세서)',
-    description: '엑셀(.xlsx/.xls)은 파일명에 카드사명(현대/hyundai 등)이 포함되어야 하며 현재 현대카드 형식만 지원합니다. HTML(.html)은 하나카드 이용대금명세서 메일을 저장한 파일을 지원하며 카드사는 본문으로 판별합니다. 카드번호 끝 4자리로 카드를 자동 등록·연결합니다.',
+    summary: '카드 명세서·이용내역 파일 업로드 (HTML / 엑셀 / CSV / PDF / 이미지)',
+    description: '암호가 걸린 엑셀은 password 없이 보내면 422를 반환하므로 암호를 받아 다시 보내면 됩니다(암호는 저장·기록하지 않음). 하나카드 HTML 명세서와 현대카드 엑셀은 전용 파서로, 그 외 카드사·형식은 Gemini로 거래를 추출합니다. 카드사는 명세서 내용, 없으면 파일명으로 판별하고 처음 보는 카드사는 자동 등록합니다. 카드번호 끝 4자리로 카드를 자동 등록·연결합니다.',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: { 
-        file: { type: 'string', format: 'binary' }
+        file: { type: 'string', format: 'binary' },
+        password: { type: 'string', description: '암호가 걸린 엑셀의 파일 암호 (422 응답을 받은 뒤 다시 보낼 때)' },
       },
     },
   })
@@ -46,24 +47,25 @@ export class FilesController {
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new FileTypeValidator({
-            fileType:
-              /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/html/,
-            // HTML은 매직 넘버가 없어 브라우저가 보낸 mimetype으로 판별
-            fallbackToMimetype: true,
-          }),
+          // 형식은 FilesService가 확장자로 판별 (매직 넘버 검사는 암호 걸린 xlsx·옛 xls를 application/x-cfb로 보고 거절함)
+          // 20MB: Gemini에 파일을 그대로 보내는 요청 한도
+          new MaxFileSizeValidator({ maxSize: 20 * 1024 * 1024, message: '파일은 20MB 이하만 업로드할 수 있습니다.' }),
         ],
       }),
     )
     file: Express.Multer.File,
+    @Body('password') password?: string,
   ) {
-    const { count, uncategorized } = await this.filesService.parseAndSaveFile(file.buffer, req.user.userId, {
-      filename: `${randomUUID()}-${file.originalname}`,
-      originalName: file.originalname,
-      fileSize: file.size,
-    });
+    const { count, uncategorized, aiExtracted } = await this.filesService.parseAndSaveFile(
+      file.buffer,
+      req.user.userId,
+      { filename: `${randomUUID()}-${file.originalname}`, originalName: file.originalname, fileSize: file.size },
+      password,
+    );
     const aiNote = uncategorized ? ` · AI 분류 실패 ${uncategorized}건은 미분류로 저장됨(거래내역에서 재분류하세요)` : '';
-    return { message: `파일 업로드 및 저장 완료 (${count}건)${aiNote}`, count, uncategorized };
+    // AI 추출은 행을 빠뜨리거나 더 읽을 수 있어 실제 청구 금액과 대조를 권함
+    const extractNote = aiExtracted ? ' · AI로 명세서를 읽었으니 카드사 청구 금액과 합계를 확인하세요' : '';
+    return { message: `파일 업로드 및 저장 완료 (${count}건)${aiNote}${extractNote}`, count, uncategorized };
   }
 
   @Post('transactions/recategorize')

@@ -34,7 +34,7 @@ export const useToken = () =>
     () => undefined,
   );
 
-/** Bearer 토큰을 붙여 호출. 401이면 토큰을 지우고 /login으로 보낸다. */
+/** Bearer 토큰을 붙여 호출. 401이면 토큰을 지우고 /login으로 보낸다. 실패 시 Error에 HTTP status를 붙인다. */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY);
   const headers = new Headers(init.headers);
@@ -52,8 +52,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (!res.ok) {
     // NestJS 에러 형식: { statusCode, message: string | string[], error }
     const message = body?.message;
-    throw new Error(
-      (Array.isArray(message) ? message.join(', ') : message) || `요청 실패 (${res.status})`,
+    throw Object.assign(
+      new Error((Array.isArray(message) ? message.join(', ') : message) || `요청 실패 (${res.status})`),
+      { status: res.status },
     );
   }
   return body as T;

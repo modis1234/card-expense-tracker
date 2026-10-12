@@ -1,8 +1,63 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import * as cheerio from 'cheerio';
+import * as officeCrypto from 'officecrypto-tool';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../database/prisma.service';
-import { AIService, CategorizeResult, isPaymentOnlyMerchant, needsReviewFor } from './ai.service';
+import { AIService, CategorizeResult, ExtractedStatement, isPaymentOnlyMerchant, needsReviewFor } from './ai.service';
 import { StatementRow, parseHanaHtml } from './parsers/hana-html.parser';
+
+// 카드사 코드 → 표시 이름, 파일명·명세서 카드사명에서 찾을 키워드 (소문자)
+// 앞에서부터 찾으므로 겹치는 키워드는 구체적인 쪽을 먼저 (kbank > kb, 토스뱅크 > 토스)
+// DB 목록은 migration 20261012100000_seed_card_companies와 맞춤. 여기 없는 금융사는 업로드 때 자동 등록
+const CARD_COMPANIES: Record<string, { name: string; keywords: string[] }> = {
+  KAKAOBANK: { name: '카카오뱅크', keywords: ['카카오뱅크', 'kakaobank'] },
+  KAKAOPAY: { name: '카카오페이', keywords: ['카카오페이', 'kakaopay'] },
+  TOSSBANK: { name: '토스뱅크', keywords: ['토스뱅크', 'tossbank'] },
+  TOSS: { name: '토스', keywords: ['토스', 'toss'] },
+  KBANK: { name: '케이뱅크', keywords: ['케이뱅크', 'kbank'] },
+  NAVERPAY: { name: '네이버페이', keywords: ['네이버페이', 'naverpay'] },
+  PAYCO: { name: '페이코', keywords: ['페이코', 'payco'] },
+  HYUNDAI: { name: '현대카드', keywords: ['현대', 'hyundai'] },
+  SHINHAN: { name: '신한카드', keywords: ['신한', 'shinhan'] },
+  SAMSUNG: { name: '삼성카드', keywords: ['삼성', 'samsung'] },
+  LOTTE: { name: '롯데카드', keywords: ['롯데', 'lotte'] },
+  KB: { name: 'KB국민카드', keywords: ['국민', 'kb', 'kookmin'] },
+  WOORI: { name: '우리카드', keywords: ['우리', 'woori'] },
+  HANA: { name: '하나카드', keywords: ['하나', 'hana'] },
+  BC: { name: 'BC카드', keywords: ['비씨', 'bc카드', 'bccard'] },
+  NH: { name: 'NH농협카드', keywords: ['농협', 'nonghyup', 'nhcard', 'nh카드', 'nh_'] },
+  IBK: { name: 'IBK기업은행', keywords: ['기업은행', 'ibk'] },
+  CITI: { name: '씨티카드', keywords: ['씨티', 'citi'] },
+  SC: { name: 'SC제일은행', keywords: ['sc제일', '제일은행', 'standardchartered'] },
+  SUHYUP: { name: '수협은행', keywords: ['수협', 'suhyup'] },
+  KDB: { name: 'KDB산업은행', keywords: ['산업은행', 'kdb'] },
+  IM: { name: 'iM뱅크', keywords: ['im뱅크', '대구은행', 'dgb', 'imbank'] },
+  BUSAN: { name: 'BNK부산은행', keywords: ['부산은행', 'busanbank'] },
+  KYONGNAM: { name: 'BNK경남은행', keywords: ['경남은행', 'knbank'] },
+  KWANGJU: { name: '광주은행', keywords: ['광주은행', 'kjbank'] },
+  JEONBUK: { name: '전북은행', keywords: ['전북은행', 'jbbank'] },
+  JEJU: { name: '제주은행', keywords: ['제주은행', 'jejubank'] },
+  POST: { name: '우체국', keywords: ['우체국', 'epost'] },
+  MG: { name: 'MG새마을금고', keywords: ['새마을', 'kfcc'] },
+  CU: { name: '신협', keywords: ['신협'] },
+};
+
+// AI 추출 시 파일 그대로 Gemini에 보내는 형식
+const BINARY_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+};
 
 export interface ParsedTransaction {
   date: string;
@@ -20,28 +75,48 @@ export class FilesService {
     private aiService: AIService,
   ) {}
 
-  // 엑셀(현대카드) 또는 HTML 명세서(하나카드)를 파싱해 저장. 저장 건수와 AI 분류 실패(미분류로 저장된) 건수를 반환
+  // 명세서 파일을 파싱해 저장. 저장 건수와 AI 분류 실패(미분류로 저장된) 건수를 반환
+  // 하나카드 HTML·현대카드 엑셀은 전용 파서, 그 외 카드사나 형식(PDF·이미지·CSV 등)은 Gemini로 추출
   async parseAndSaveFile(
     buffer: Buffer,
     userId: string,
     fileInfo: { filename: string; originalName: string; fileSize: number },
-  ): Promise<{ count: number; uncategorized: number }> {
-    const isHtml = /\.html?$/i.test(fileInfo.originalName);
+    password?: string,
+  ): Promise<{ count: number; uncategorized: number; aiExtracted: boolean }> {
+    const name = fileInfo.originalName;
+    if (/\.xlsx?$/i.test(name)) buffer = await this.decryptExcel(buffer, password);
+    const isHtml = /\.html?$/i.test(name);
     const html = isHtml ? buffer.toString('utf8') : '';
     // HTML은 파일명 대신 본문으로 카드사 판별 (메일에서 저장한 파일명이 제각각이라)
-    const cardCompanyCode = isHtml && html.includes('하나카드') ? 'HANA' : this.extractCardCompanyCode(fileInfo.originalName);
-    if (isHtml && cardCompanyCode !== 'HANA') throw new BadRequestException('HTML 명세서는 현재 하나카드만 지원합니다.');
+    let cardCompanyCode = isHtml ? (html.includes('하나카드') ? 'HANA' : 'UNKNOWN') : this.extractCardCompanyCode(name);
+    let statementCompanyName: string | null = null;
 
-    const cardCompany = await this.prisma.cardCompany.findUnique({ where: { code: cardCompanyCode } });
-    if (!cardCompany) throw new BadRequestException(`카드사를 찾을 수 없습니다: ${cardCompanyCode} (파일명에 카드사명을 포함하세요)`);
-
-    let validRows: StatementRow[];
+    let validRows: StatementRow[] = [];
+    let aiExtracted = false;
     try {
-      validRows = isHtml ? parseHanaHtml(html) : this.parseHyundaiExcel(buffer);
-    } catch (error) {
-      throw new BadRequestException(`명세서 파싱 실패: ${error.message}`);
+      if (isHtml && cardCompanyCode === 'HANA') validRows = parseHanaHtml(html);
+      else if (/\.xlsx?$/i.test(name) && cardCompanyCode === 'HYUNDAI') validRows = this.parseHyundaiExcel(buffer);
+    } catch {
+      // 전용 파서가 못 읽는 양식이면 아래 AI 추출로
+    }
+    if (validRows.length === 0) {
+      let extracted: ExtractedStatement;
+      try {
+        extracted = await this.aiService.extractStatement(this.toExtractInput(buffer, name, html));
+      } catch (error) {
+        if (error instanceof BadRequestException) throw error;
+        throw new BadGatewayException(`AI 명세서 읽기 실패: ${error.message}`);
+      }
+      validRows = extracted.rows;
+      aiExtracted = true;
+      statementCompanyName = extracted.cardCompany;
+      // 명세서에 적힌 카드사명 우선, 없으면 파일명으로
+      const fromStatement = this.extractCardCompanyCode(statementCompanyName ?? '');
+      if (fromStatement !== 'UNKNOWN') cardCompanyCode = fromStatement;
     }
     if (validRows.length === 0) throw new BadRequestException('파일에서 거래 내역을 찾지 못했습니다.');
+
+    const cardCompany = await this.resolveCardCompany(cardCompanyCode, statementCompanyName);
 
     // 같은 카드사·청구월 명세서가 이미 있으면 중복 저장하지 않음 (직접 업로드·Gmail 불러오기 공통)
     // ponytail: 청구월이 없는 현대카드 엑셀은 확인 안 함
@@ -124,7 +199,7 @@ export class FilesService {
       }),
     });
     if (uncategorized > 0) this.logger.warn(`AI 분류 실패 ${uncategorized}/${validRows.length}건, 기본 카테고리로 저장`);
-    return { count: validRows.length, uncategorized };
+    return { count: validRows.length, uncategorized, aiExtracted };
   }
 
   // Gemini 일괄 분류를 50건씩 나눠 호출하고, 답이 빠진 거래가 있는 묶음은 한 번 더 요청해 결과를 합침
@@ -153,6 +228,61 @@ export class FilesService {
     return results;
   }
 
+  // Gemini에 보낼 입력: PDF·이미지는 파일 그대로, HTML·엑셀·CSV는 표 구조를 살린 텍스트로
+  // ponytail: CSV는 UTF-8만 가정, EUC-KR CSV가 깨지면 인코딩 감지 추가
+  private toExtractInput(buffer: Buffer, name: string, html: string): { text: string } | { data: Buffer; mimeType: string } {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    if (BINARY_MIME[ext]) return { data: buffer, mimeType: BINARY_MIME[ext] };
+    if (html) {
+      // 스타일·속성을 버리고 칸은 ' | ', 행은 줄바꿈으로 남겨 토큰을 줄임
+      const $ = cheerio.load(html);
+      $('script, style').remove();
+      $('td, th').append(' | ');
+      $('tr, br, p, div, li').append('\n');
+      const text = $('body').text().split('\n').map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+      return { text };
+    }
+    if (/^(xlsx|xls|csv)$/.test(ext)) {
+      let workbook: XLSX.WorkBook;
+      try {
+        workbook = XLSX.read(buffer, { type: 'buffer' });
+      } catch (error) {
+        throw new BadRequestException(`엑셀 파일을 열 수 없습니다. (${error.message})`);
+      }
+      return { text: workbook.SheetNames.map((n) => XLSX.utils.sheet_to_csv(workbook.Sheets[n])).join('\n\n') };
+    }
+    throw new BadRequestException('지원하지 않는 파일 형식입니다. (HTML, 엑셀, CSV, PDF, 이미지)');
+  }
+
+  // 카드사에서 받은 엑셀은 암호가 걸린 경우가 많음. 422는 프론트가 암호 입력창을 띄우는 신호
+  // 암호는 복호화에만 쓰고 저장·로그하지 않음
+  private async decryptExcel(buffer: Buffer, password?: string): Promise<Buffer> {
+    let encrypted = false;
+    try {
+      encrypted = officeCrypto.isEncrypted(buffer);
+    } catch {
+      // 엑셀 컨테이너가 아니면 아래 파싱 단계에서 오류 안내
+    }
+    if (!encrypted) return buffer;
+    if (!password) throw new UnprocessableEntityException('암호가 걸린 엑셀입니다. 파일 암호를 입력해 주세요.');
+    try {
+      return await officeCrypto.decrypt(buffer, { password });
+    } catch (error) {
+      if (/password/i.test(error.message)) throw new UnprocessableEntityException('엑셀 암호가 맞지 않습니다. 다시 입력해 주세요.');
+      throw new BadRequestException(`엑셀 암호를 풀 수 없습니다: ${error.message}`);
+    }
+  }
+
+  // 등록된 카드사를 코드나 이름으로 찾고, 처음 보는 카드사는 자동 등록
+  private async resolveCardCompany(code: string, statementCompanyName: string | null) {
+    const known = CARD_COMPANIES[code];
+    const name = known?.name ?? statementCompanyName;
+    if (!name) throw new BadRequestException('카드사를 판별하지 못했습니다. 파일명에 카드사명을 넣어 주세요. (예: shinhan_202610.pdf)');
+    const finalCode = known ? code : name.replace(/\s/g, '').toUpperCase();
+    const existing = await this.prisma.cardCompany.findFirst({ where: { OR: [{ code: finalCode }, { name }] } });
+    return existing ?? this.prisma.cardCompany.create({ data: { code: finalCode, name } });
+  }
+
   // 현대카드 엑셀: 9행부터 거래, 컬럼 순서 고정
   private parseHyundaiExcel(buffer: Buffer): StatementRow[] {
     const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -171,25 +301,10 @@ export class FilesService {
       }));
   }
 
-  private extractCardCompanyCode(filename: string): string {
-    const cardMap: Record<string, string[]> = {
-      'HYUNDAI': ['현대', 'hyundai'],
-      'SHINHAN': ['신한', 'shinhan'],
-      'SAMSUNG': ['삼성', 'samsung'],
-      'LOTTE': ['롯데', 'lotte'],
-      'KB': ['국민', 'kb', 'kookmin'],
-      'WOORI': ['우리', 'woori'],
-      'HANA': ['하나', 'hana'],
-      'NH': ['nh', '농협', 'nonghyup'],
-    };
-
-    const lowerFilename = filename.toLowerCase();
-    for (const [code, keywords] of Object.entries(cardMap)) {
-      if (keywords.some(keyword => lowerFilename.includes(keyword.toLowerCase()))) {
-        return code;
-      }
-    }
-    return 'UNKNOWN';
+  private extractCardCompanyCode(text: string): string {
+    const lower = text.toLowerCase();
+    const found = Object.entries(CARD_COMPANIES).find(([, c]) => c.keywords.some((k) => lower.includes(k)));
+    return found?.[0] ?? 'UNKNOWN';
   }
 
   // '1234-****-****-5678' → '5678'

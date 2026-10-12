@@ -1,5 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GoogleGenAI } from '@google/genai';
+import { StatementRow } from './parsers/hana-html.parser';
+
+export interface ExtractedStatement {
+  /** 명세서에 적힌 카드사명 (예: '신한카드'), 모르면 null */
+  cardCompany: string | null;
+  rows: StatementRow[];
+}
 
 export interface CategorizeResult {
   category: string;
@@ -131,6 +138,57 @@ ${transactions.map((t, i) => `${i + 1}. ${t.merchantName}`).join('\n')}
       }
     }
     return results;
+  }
+
+  // 전용 파서가 없는 카드사 명세서(HTML 텍스트·엑셀 CSV·PDF·이미지)에서 거래 추출
+  // 형식이 맞지 않는 행은 버리고, 남은 행만 반환
+  async extractStatement(input: { text: string } | { data: Buffer; mimeType: string }): Promise<ExtractedStatement> {
+    const prompt = `카드 이용대금명세서 또는 카드 이용내역에서 거래를 모두 추출해 JSON 객체 하나로만 답하세요.
+
+{"cardCompany": "<카드사명, 예: 신한카드. 알 수 없으면 null>",
+ "billingMonth": "<청구월 YYYY-MM. 이용대금명세서가 아니면 null>",
+ "transactions": [{"date": "YYYY-MM-DD", "merchantName": "<가맹점명>", "amount": <이번 달 청구 금액(원, 정수). 할부는 이번 회차 금액, 취소·환불은 음수>, "last4": "<카드번호 끝 4자리, 없으면 null>", "installmentMonths": <할부 개월 수, 일시불이면 null>, "installmentRound": <할부 회차, 없으면 null>}]}
+
+규칙: 소계·합계·결제예정금액 같은 요약 행과 광고·안내 문구는 제외. 이용일에 연도가 없으면 명세서 기간으로 연도를 정하세요.`;
+
+    const response = await this.ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [
+        {
+          role: 'user',
+          parts:
+            'text' in input
+              ? [{ text: `${prompt}\n\n${input.text}` }]
+              : [{ text: prompt }, { inlineData: { mimeType: input.mimeType, data: input.data.toString('base64') } }],
+        },
+      ],
+      config: { responseMimeType: 'application/json' },
+    });
+
+    const parsed = this.parseJson(response.text);
+    const billingMonth = /^\d{4}-\d{2}$/.test(parsed?.billingMonth) ? parsed.billingMonth : undefined;
+    const rows: StatementRow[] = [];
+    for (const t of Array.isArray(parsed?.transactions) ? parsed.transactions : []) {
+      const date = new Date(t?.date);
+      const amount = Number(t?.amount);
+      const merchantName = String(t?.merchantName ?? '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(t?.date) || Number.isNaN(date.getTime()) || !merchantName || !Number.isInteger(amount)) continue;
+      const months = Number(t.installmentMonths);
+      const installment = Number.isInteger(months) && months > 1;
+      rows.push({
+        date,
+        merchantName,
+        amount,
+        last4: /^\d{4}$/.test(t.last4) ? t.last4 : null,
+        installmentMonths: installment ? months : undefined,
+        installmentRound: installment && Number(t.installmentRound) > 0 ? Number(t.installmentRound) : undefined,
+        billingMonth,
+      });
+    }
+    // 응답 원문은 지출 내역이라 남기지 않고 건수만 기록
+    this.logger.log(`Gemini 명세서 추출 ${rows.length}건 (응답 ${response.text?.length ?? 0}자)`);
+    const cardCompany = typeof parsed?.cardCompany === 'string' && parsed.cardCompany.trim() ? parsed.cardCompany.trim() : null;
+    return { cardCompany, rows };
   }
 
   private parseJson(text?: string): any {
