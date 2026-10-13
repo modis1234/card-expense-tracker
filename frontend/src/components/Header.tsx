@@ -8,6 +8,7 @@ import { clearToken } from '@/lib/api';
 const NAV = [
   { href: '/dashboard', label: '대시보드' },
   { href: '/transactions', label: '거래내역' },
+  { href: '/groups', label: '카드 그룹' },
   { href: '/upload', label: '업로드' },
 ];
 
