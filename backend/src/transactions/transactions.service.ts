@@ -14,9 +14,11 @@ export class TransactionsService {
   findAll(userId: string, query: FindTransactionsDto) {
     return this.prisma.transaction.findMany({
       where: {
-        userId,
+        // 그룹 조회는 소유자 또는 공유받은 멤버 모두 가능 (그룹 카드의 거래는 소유자 것이라 userId 조건 없음)
+        ...(query.groupId
+          ? { card: { groupId: query.groupId, group: { OR: [{ userId }, { members: { some: { userId } } }] } } }
+          : { userId }),
         cardId: query.cardId,
-        card: query.groupId ? { groupId: query.groupId } : undefined,
         date: {
           gte: query.from ? new Date(query.from) : undefined,
           lte: query.to ? new Date(query.to) : undefined,
