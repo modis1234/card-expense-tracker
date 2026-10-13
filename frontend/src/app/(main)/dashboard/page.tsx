@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch, type ITransaction } from '@/lib/api';
+import { apiFetch, type ICardGroup, type ISharedCardGroup, type ITransaction } from '@/lib/api';
 
 const won = (n: number) => `₩${n.toLocaleString('ko-KR')}`;
 const sumOf = (list: ITransaction[]) => list.reduce((s, t) => s + t.amount, 0);
@@ -25,17 +25,38 @@ export default function DashboardPage() {
   const [result, setResult] = useState<Result>();
   const [pickedMonth, setPickedMonth] = useState<string>();
   const [tip, setTip] = useState<Tip | null>(null);
+  // 조회 범위: '' = 내 전체 지출, 그 외 = 카드 그룹 id (내 그룹 또는 공유받은 그룹)
+  const [groupId, setGroupId] = useState('');
+  const [scopes, setScopes] = useState<{ id: string; label: string }[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<ITransaction[]>('/transactions').then(
+    apiFetch<ITransaction[]>(groupId ? `/transactions?groupId=${encodeURIComponent(groupId)}` : '/transactions').then(
       (data) => !cancelled && setResult({ data }),
       (e: Error) => !cancelled && setResult({ error: e.message }),
     );
     return () => {
       cancelled = true;
     };
+  }, [groupId]);
+
+  useEffect(() => {
+    // 범위 목록 조회 실패 시 '내 전체 지출'만 표시
+    Promise.all([apiFetch<ICardGroup[]>('/card-groups'), apiFetch<ISharedCardGroup[]>('/card-groups/shared')]).then(
+      ([mine, shared]) =>
+        setScopes([
+          ...mine.map((g) => ({ id: g.id, label: g.name })),
+          ...shared.map((g) => ({ id: g.id, label: `${g.name} · ${g.user.name ?? g.user.email}님 공유` })),
+        ]),
+      () => setScopes([]),
+    );
   }, []);
+
+  const handleScopeChange = (id: string) => {
+    setGroupId(id);
+    setPickedMonth(undefined);
+    setResult(undefined);
+  };
 
   const data = useMemo(() => result?.data ?? [], [result]);
   const months = useMemo(() => [...new Set(data.map(monthOf))].sort().reverse(), [data]);
@@ -78,16 +99,40 @@ export default function DashboardPage() {
     };
   }, [data, month]);
 
-  if (!result) return <p className="py-12 text-center text-gray-500">불러오는 중...</p>;
-  if (result.error) return <p className="py-12 text-center text-red-600">통계를 불러오지 못했습니다: {result.error}</p>;
+  const scopeSelect = scopes.length > 0 && (
+    <select
+      value={groupId}
+      onChange={(e) => handleScopeChange(e.target.value)}
+      className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+      aria-label="조회 범위"
+    >
+      <option value="">내 전체 지출</option>
+      {scopes.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.label}
+        </option>
+      ))}
+    </select>
+  );
+
+  // 결과가 없을 때도 범위 선택은 보여야 다른 그룹으로 바꿀 수 있음
+  const empty = (message: React.ReactNode) => (
+    <div className="space-y-2">
+      {scopeSelect && <div className="flex justify-end">{scopeSelect}</div>}
+      {message}
+    </div>
+  );
+  if (!result) return empty(<p className="py-12 text-center text-gray-500">불러오는 중...</p>);
+  if (result.error)
+    return empty(<p className="py-12 text-center text-red-600">통계를 불러오지 못했습니다: {result.error}</p>);
   if (!stats)
-    return (
+    return empty(
       <p className="py-12 text-center text-gray-500">
         거래내역이 없습니다.{' '}
         <Link href="/upload" className="text-indigo-600 underline">
           명세서 업로드하기
         </Link>
-      </p>
+      </p>,
     );
 
   // 도넛 차트: 양수 금액만 비율 계산 (환불 위주 카테고리는 차트에서 제외)
@@ -125,18 +170,21 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{monthLabel(month)} 지출 현황</h1>
-        <select
-          value={month}
-          onChange={(e) => setPickedMonth(e.target.value)}
-          className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
-          aria-label="조회 월"
-        >
-          {months.map((m) => (
-            <option key={m} value={m}>
-              {monthLabel(m)}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap gap-2">
+          {scopeSelect}
+          <select
+            value={month}
+            onChange={(e) => setPickedMonth(e.target.value)}
+            className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+            aria-label="조회 월"
+          >
+            {months.map((m) => (
+              <option key={m} value={m}>
+                {monthLabel(m)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

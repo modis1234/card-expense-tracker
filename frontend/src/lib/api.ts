@@ -90,3 +90,49 @@ export interface ITransaction {
   cardCompany: { id: string; name: string } | null;
   card: { id: string; last4: string; alias: string | null; group: { id: string; name: string } | null } | null;
 }
+
+/** JWT payload의 sub(내 userId). 서명 검증은 서버 몫이고 여기서는 화면 표시용으로만 사용 */
+export const getMyUserId = (): string | null => {
+  const payload = localStorage.getItem(TOKEN_KEY)?.split('.')[1];
+  if (!payload) return null;
+  try {
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))).sub ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export interface ICard {
+  id: string;
+  last4: string;
+  alias: string | null;
+  groupId: string | null;
+  cardCompany: { id: string; name: string };
+}
+
+/** 그룹 응답에 포함된 카드 (카드사 정보 없음) */
+export type IGroupCard = Omit<ICard, 'cardCompany'>;
+
+export interface IUserSummary {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+/** 내가 만든 카드 그룹 */
+export interface ICardGroup {
+  id: string;
+  name: string;
+  color: string | null;
+  cards: IGroupCard[];
+  members: { userId: string; createdAt: string; user: IUserSummary }[];
+}
+
+/** 나에게 공유된 카드 그룹 (읽기 전용). user = 소유자 */
+export interface ISharedCardGroup {
+  id: string;
+  name: string;
+  color: string | null;
+  cards: IGroupCard[];
+  user: IUserSummary;
+}
